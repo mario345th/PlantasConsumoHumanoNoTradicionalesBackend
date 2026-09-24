@@ -8,6 +8,7 @@ import lombok.Setter;
 import sv.edu.ues.fmp.flora.entity.enums.EstadoPublicacion;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Ficha de especie tal como sale de la API.
@@ -36,6 +37,13 @@ public class EspecieResponse {
     private Boolean activa;
 
     private TaxonomiaResponse taxonomia;
+
+    /**
+     * Solo los nombres activos, con el principal a la cabeza. Nunca es null:
+     * una especie sin nombres comunes, o con todos dados de baja, sale con
+     * lista vacia.
+     */
+    private List<NombreComunResponse> nombresComunes;
 
     private String creadaPor;
     private String validadaPor;

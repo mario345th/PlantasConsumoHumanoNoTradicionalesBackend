@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -22,6 +23,7 @@ import org.hibernate.generator.EventType;
 import sv.edu.ues.fmp.flora.entity.enums.EstadoPublicacion;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Ficha de una especie vegetal. Corresponde a la tabla {@code especie} y es el
@@ -58,8 +60,10 @@ import java.time.LocalDateTime;
  * de la base tras cada INSERT o UPDATE. Sin esa anotacion la entidad en memoria
  * conservaria la fecha vieja que el trigger ya reescribio.
  * <p>
- * No se mapean colecciones inversas (partes comestibles, imagenes, habitats,
- * fuentes): se recuperan por repositorio cuando hagan falta.
+ * La unica coleccion inversa mapeada es {@code nombresComunes}, porque la ficha
+ * de la especie no esta completa sin ellos y el Response los lleva siempre. Las
+ * demas (partes comestibles, imagenes, habitats, fuentes) se recuperan por
+ * repositorio cuando hagan falta.
  */
 @Entity
 @Table(name = "especie")
@@ -138,4 +142,21 @@ public class Especie {
     /** La asigna el servicio al publicar, junto con {@code publicadaPor}. */
     @Column(name = "fecha_publicacion")
     private LocalDateTime fechaPublicacion;
+
+    /**
+     * Nombres vernaculos de la especie. Es el lado inverso: el dueno de la
+     * relacion es {@code NombreComun.especie}, que es quien tiene la columna
+     * {@code id_especie}.
+     * <p>
+     * Sin {@code cascade} a proposito: los nombres se crean y se dan de baja
+     * explicitamente por {@code NombreComunService}, que es donde viven sus
+     * reglas (un solo principal activo, unicidad de nombre mas region). Dejar
+     * que se propagaran desde aqui saltaria esas validaciones.
+     * <p>
+     * Sin {@code @Builder.Default}: la coleccion puede quedar en null, y de
+     * hecho queda asi en una especie recien construida por el builder. Quien la
+     * lea tiene que contemplar ese caso.
+     */
+    @OneToMany(mappedBy = "especie", fetch = FetchType.LAZY)
+    private List<NombreComun> nombresComunes;
 }

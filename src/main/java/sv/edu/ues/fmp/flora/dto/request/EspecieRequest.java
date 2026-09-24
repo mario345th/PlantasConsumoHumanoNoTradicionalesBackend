@@ -10,6 +10,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * Datos que entran al crear o actualizar una especie.
  * <p>
@@ -54,4 +56,20 @@ public class EspecieRequest {
     @NotNull(message = "La taxonomía es obligatoria")
     @Valid
     private TaxonomiaRequest taxonomia;
+
+    /**
+     * Nombres vernaculos con los que se dara de alta la especie. Es opcional:
+     * si llega null o vacio la especie se crea sin nombres comunes, que es
+     * valido, porque se pueden agregar despues por los endpoints propios del
+     * modulo. Si llega con elementos, exactamente uno tiene que venir marcado
+     * como principal; eso lo comprueba el servicio.
+     * <p>
+     * El {@code @Valid} sobre la lista propaga las validaciones de cada
+     * {@link NombreComunRequest}; sin el no se ejecutarian.
+     * <p>
+     * Solo se tiene en cuenta al crear. En un PUT se ignora: la lista de
+     * nombres comunes de una especie ya existente se gestiona por su modulo.
+     */
+    @Valid
+    private List<NombreComunRequest> nombresComunes;
 }

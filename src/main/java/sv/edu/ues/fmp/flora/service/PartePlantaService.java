@@ -19,6 +19,13 @@ public interface PartePlantaService {
 
     PartePlantaResponse obtenerPorId(Long id);
 
+    /**
+     * Busqueda parcial por nombre, sin distinguir mayusculas. Devuelve activas
+     * e inactivas: quien busca quiere encontrar la parte aunque este dada de
+     * baja, aunque solo sea para reactivarla.
+     */
+    List<PartePlantaResponse> buscarPorNombre(String nombre);
+
     PartePlantaResponse crear(PartePlantaRequest request);
 
     PartePlantaResponse actualizar(Long id, PartePlantaRequest request);

@@ -2,11 +2,13 @@ package sv.edu.ues.fmp.flora.exception;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,6 +16,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import jakarta.servlet.http.HttpServletRequest;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.exc.InvalidFormatException;
+import tools.jackson.databind.exc.MismatchedInputException;
 
 /**
  * Captura en un solo lugar las excepciones de toda la API y las convierte en
@@ -199,5 +204,68 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(cuerpo);
+    }
+
+    /**
+     * El cuerpo de la peticion no se pudo leer: JSON con sintaxis invalida, o un
+     * tipo incompatible en un campo (numero donde se esperaba texto, booleano
+     * donde se esperaba texto) una vez activada la coercion estricta de Jackson
+     * en JacksonConfig -> 400 BAD REQUEST sin exponer el stack trace interno.
+     * <p>
+     * La causa real viene envuelta dentro de HttpMessageNotReadableException:
+     * si es InvalidFormatException o MismatchedInputException, se identifica el
+     * campo culpable; en cualquier otro caso (JSON con sintaxis rota, comas
+     * faltantes, llaves sin cerrar) se da un mensaje generico de formato.
+     * <p>
+     * Ambas excepciones son las de Jackson 3 ({@code tools.jackson}), que es el
+     * que usa Spring Boot 4 para leer el cuerpo. Las homonimas de Jackson 2
+     * ({@code com.fasterxml.jackson.databind.exc}) tambien compilan, porque
+     * springdoc las trae al classpath, pero nunca coincidirian con la causa.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> manejarJsonInvalido(
+            HttpMessageNotReadableException ex,
+            HttpServletRequest request) {
+
+        String mensaje = "El cuerpo de la solicitud no tiene un formato JSON valido";
+
+        String campo = null;
+        Throwable causa = ex.getCause();
+        if (causa instanceof InvalidFormatException ife) {
+            campo = nombreDelCampo(ife.getPath());
+        } else if (causa instanceof MismatchedInputException mie) {
+            campo = nombreDelCampo(mie.getPath());
+        }
+        if (campo != null) {
+            mensaje = "El campo '" + campo + "' tiene un tipo de dato incorrecto";
+        }
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.BAD_REQUEST.value())
+                .error("Solicitud mal formada")
+                .mensaje(mensaje)
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(cuerpo);
+    }
+
+    /**
+     * Devuelve el nombre del ultimo tramo de la ruta que corresponde a un campo.
+     * Los tramos que son indices de lista no tienen nombre: en
+     * {@code "nombresComunes": [123]} la ruta es nombresComunes -> [0], y el
+     * campo que hay que reportar es nombresComunes, no el indice.
+     * Devuelve null si ningun tramo tiene nombre (por ejemplo, si el cuerpo
+     * entero es una lista), y entonces se conserva el mensaje generico.
+     */
+    private static String nombreDelCampo(List<JacksonException.Reference> ruta) {
+        for (int i = ruta.size() - 1; i >= 0; i--) {
+            String nombre = ruta.get(i).getPropertyName();
+            if (nombre != null) {
+                return nombre;
+            }
+        }
+        return null;
     }
 }

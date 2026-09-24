@@ -46,6 +46,19 @@ public class MunicipioServiceImpl implements MunicipioService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<MunicipioResponse> buscarPorNombre(String nombre) {
+        // Un termino vacio devuelve la lista vacia y no los 260 municipios: el
+        // LIKE con comodines a ambos lados casaria con todas las filas, que no
+        // es lo que espera quien vacio la caja de busqueda.
+        if (nombre == null || nombre.isBlank()) {
+            return List.of();
+        }
+        return municipioRepository.findByNombreContainingIgnoreCase(nombre.trim())
+                .stream().map(municipioMapper::toResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public MunicipioResponse obtenerPorId(Long id) {
         return municipioMapper.toResponse(buscarOFallar(id));
     }

@@ -10,8 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.EspecieRequest;
+import sv.edu.ues.fmp.flora.dto.request.NombreComunRequest;
 import sv.edu.ues.fmp.flora.dto.request.TaxonomiaRequest;
 import sv.edu.ues.fmp.flora.dto.response.EspecieResponse;
+import sv.edu.ues.fmp.flora.dto.response.NombreComunResponse;
 import sv.edu.ues.fmp.flora.entity.Especie;
 import sv.edu.ues.fmp.flora.entity.Taxonomia;
 import sv.edu.ues.fmp.flora.entity.Usuario;
@@ -25,6 +27,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.TaxonomiaRepository;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
 import sv.edu.ues.fmp.flora.service.EspecieService;
+import sv.edu.ues.fmp.flora.service.NombreComunService;
 
 /**
  * Implementacion de la logica de negocio de las especies.
@@ -45,6 +48,13 @@ public class EspecieServiceImpl implements EspecieService {
     private final UsuarioRepository usuarioRepository;
     private final EspecieMapper especieMapper;
     private final TaxonomiaMapper taxonomiaMapper;
+
+    /**
+     * Se depende del servicio de nombres comunes, no de su repositorio, para que
+     * los nombres anidados en el POST pasen por exactamente las mismas reglas
+     * que los creados por los endpoints del modulo.
+     */
+    private final NombreComunService nombreComunService;
 
     @Override
     @Transactional(readOnly = true)
@@ -99,7 +109,71 @@ public class EspecieServiceImpl implements EspecieService {
         // El estado queda en BORRADOR por el @Builder.Default de la entidad.
         Especie nueva = especieMapper.toEntity(request, taxonomia, creador);
 
-        return especieMapper.toResponse(especieRepository.save(nueva));
+        Especie especieGuardada = especieRepository.save(nueva);
+
+        EspecieResponse respuesta = especieMapper.toResponse(especieGuardada);
+
+        // Los nombres comunes son opcionales: sin ellos la especie se crea igual
+        // y se pueden agregar despues por los endpoints de su modulo.
+        //
+        // Se crean en la MISMA transaccion que la especie y su taxonomia, por el
+        // mismo motivo: si uno de ellos falla (nombre repetido dentro de la
+        // especie, por ejemplo), el rollback se lleva tambien la especie y la
+        // taxonomia, y no queda una ficha a medio poblar que nadie pidio.
+        //
+        // Se delega en NombreComunService en vez de insertar aqui para no
+        // duplicar sus reglas: el desplazamiento del principal anterior, la
+        // unicidad de nombre mas region y el flush() que necesita el indice
+        // unico parcial ya viven alli. La iteracion es segura respecto a ese
+        // flush, y ademas cada crear() consulta antes de insertar, asi que ve
+        // los nombres que las vueltas anteriores del bucle ya insertaron.
+        List<NombreComunRequest> nombresComunes = request.getNombresComunes();
+        if (nombresComunes != null && !nombresComunes.isEmpty()) {
+            validarUnPrincipalExacto(nombresComunes);
+
+            List<NombreComunResponse> creados = new ArrayList<>();
+            for (NombreComunRequest nombreComun : nombresComunes) {
+                creados.add(nombreComunService.crear(especieGuardada.getIdEspecie(), nombreComun));
+            }
+
+            // Se colocan a mano porque la coleccion perezosa de la especie
+            // recien insertada sigue en null: Hibernate no la puebla con filas
+            // que se han insertado despues dentro de la misma sesion, de modo
+            // que toResponse() habria devuelto una lista vacia pese a haberlos
+            // creado. El orden lo pone el mapper, el mismo que en toResponse().
+            respuesta.setNombresComunes(especieMapper.ordenarParaPresentacion(creados));
+        }
+
+        return respuesta;
+    }
+
+    /**
+     * Comprueba que la lista de nombres comunes que acompana a la creacion de
+     * una especie traiga uno, y solo uno, marcado como principal.
+     * <p>
+     * Es {@link EstadoInvalidoException} (409) y no
+     * {@link RecursoDuplicadoException}: no hay ningun registro repetido, lo que
+     * falla es la composicion del Request frente a la regla de negocio de que
+     * una especie tiene exactamente un nombre de cabecera.
+     * <p>
+     * Se valida antes de insertar nada. Si se dejara al bucle, el segundo
+     * principal simplemente desmarcaria al primero y la especie quedaria creada
+     * con un principal que el cliente no eligio, en silencio.
+     */
+    private void validarUnPrincipalExacto(List<NombreComunRequest> nombresComunes) {
+        long principales = nombresComunes.stream()
+                .filter(nombreComun -> Boolean.TRUE.equals(nombreComun.getEsPrincipal()))
+                .count();
+
+        if (principales == 0) {
+            throw new EstadoInvalidoException(
+                    "Debe marcar exactamente un nombre común como principal. No se marcó ninguno.");
+        }
+        if (principales > 1) {
+            throw new EstadoInvalidoException(
+                    "Debe marcar exactamente un nombre común como principal. Se marcaron "
+                            + principales + ".");
+        }
     }
 
     @Override
@@ -121,6 +195,12 @@ public class EspecieServiceImpl implements EspecieService {
         Taxonomia taxonomia = entidad.getTaxonomia();
         validarClasificacionUnica(request.getTaxonomia(), taxonomia.getIdTaxonomia());
 
+        // Si el Request trae nombresComunes se ignoran a proposito. Actualizar
+        // la ficha no debe reescribir la lista de nombres comunes: un PUT manda
+        // el recurso entero, asi que un cliente que solo quisiera corregir la
+        // descripcion borraria de hecho todos los nombres que no reenviara.
+        // Esa lista se gestiona por los endpoints propios del modulo, que
+        // ademas saben aplicar sus reglas una por una.
         especieMapper.updateEntity(entidad, request);
         taxonomiaMapper.updateEntity(taxonomia, request.getTaxonomia());
 

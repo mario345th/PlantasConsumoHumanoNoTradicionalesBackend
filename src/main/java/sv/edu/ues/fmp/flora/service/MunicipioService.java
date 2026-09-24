@@ -16,6 +16,13 @@ public interface MunicipioService {
 
      List<MunicipioResponse> listarPorDepartamento(Long idDepartamento);
 
+     /**
+      * Busqueda parcial por nombre en todo el pais, sin distinguir mayusculas.
+      * Devuelve activos e inactivos: quien busca quiere encontrar el municipio
+      * aunque este dado de baja, aunque solo sea para reactivarlo.
+      */
+     List<MunicipioResponse> buscarPorNombre(String nombre);
+
      MunicipioResponse obtenerPorId(Long id);
 
      MunicipioResponse crear(MunicipioRequest request);

@@ -52,6 +52,23 @@ public class PartePlantaServiceImpl implements PartePlantaService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PartePlantaResponse> buscarPorNombre(String nombre) {
+        // Un termino vacio devuelve la lista vacia y no el catalogo entero: el
+        // LIKE con comodines a ambos lados casaria con todas las filas, que no
+        // es lo que espera quien vacio la caja de busqueda.
+        if (nombre == null || nombre.isBlank()) {
+            return List.of();
+        }
+
+        List<PartePlantaResponse> respuestas = new ArrayList<>();
+        for (PartePlanta entidad : partePlantaRepository.findByNombreContainingIgnoreCase(nombre.trim())) {
+            respuestas.add(partePlantaMapper.toResponse(entidad));
+        }
+        return respuestas;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PartePlantaResponse obtenerPorId(Long id) {
         PartePlanta entidad = buscarOFallar(id);
         return partePlantaMapper.toResponse(entidad);

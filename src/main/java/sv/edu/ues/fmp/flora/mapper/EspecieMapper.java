@@ -1,11 +1,16 @@
 package sv.edu.ues.fmp.flora.mapper;
 
+import java.util.Comparator;
+import java.util.List;
+
 import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.EspecieRequest;
 import sv.edu.ues.fmp.flora.dto.response.EspecieResponse;
+import sv.edu.ues.fmp.flora.dto.response.NombreComunResponse;
 import sv.edu.ues.fmp.flora.entity.Especie;
+import sv.edu.ues.fmp.flora.entity.NombreComun;
 import sv.edu.ues.fmp.flora.entity.Taxonomia;
 import sv.edu.ues.fmp.flora.entity.Usuario;
 
@@ -20,7 +25,21 @@ import sv.edu.ues.fmp.flora.entity.Usuario;
 @RequiredArgsConstructor
 public class EspecieMapper {
 
+    /**
+     * Orden de presentacion de los nombres comunes: el principal primero y el
+     * resto alfabeticamente.
+     * <p>
+     * La primera clave es {@code !esPrincipal}, porque un Comparator natural
+     * ordena false antes que true y lo que se quiere es justo lo contrario:
+     * negando, el principal puntua false y encabeza la lista. Equivale a
+     * ordenar por {@code esPrincipal} descendente.
+     */
+    private static final Comparator<NombreComunResponse> ORDEN_PRESENTACION =
+            Comparator.comparing((NombreComunResponse n) -> !Boolean.TRUE.equals(n.getEsPrincipal()))
+                    .thenComparing(NombreComunResponse::getNombre, String.CASE_INSENSITIVE_ORDER);
+
     private final TaxonomiaMapper taxonomiaMapper;
+    private final NombreComunMapper nombreComunMapper;
 
     /**
      * Construye la especie a partir de entidades ya validadas por el servicio.
@@ -54,6 +73,15 @@ public class EspecieMapper {
         entity.setAdvertencias(request.getAdvertencias());
     }
 
+    /**
+     * Arma la ficha completa, nombres comunes incluidos.
+     * <p>
+     * Acceder a {@code entity.getNombresComunes()} dispara la consulta a
+     * {@code nombre_comun} por ser una coleccion perezosa. Es correcto porque
+     * {@code toResponse} siempre se invoca desde metodos {@code @Transactional}
+     * del servicio, de modo que la sesion sigue abierta; llamarlo fuera de una
+     * transaccion daria {@code LazyInitializationException}.
+     */
     public EspecieResponse toResponse(Especie entity) {
         return EspecieResponse.builder()
                 .idEspecie(entity.getIdEspecie())
@@ -66,6 +94,7 @@ public class EspecieMapper {
                 .estadoPublicacion(entity.getEstadoPublicacion())
                 .activa(entity.getActiva())
                 .taxonomia(taxonomiaMapper.toResponse(entity.getTaxonomia()))
+                .nombresComunes(nombresComunesVisibles(entity))
                 .creadaPor(nombreCompleto(entity.getCreadaPor()))
                 .validadaPor(nombreCompleto(entity.getValidadaPor()))
                 .publicadaPor(nombreCompleto(entity.getPublicadaPor()))
@@ -74,6 +103,40 @@ public class EspecieMapper {
                 .fechaValidacion(entity.getFechaValidacion())
                 .fechaPublicacion(entity.getFechaPublicacion())
                 .build();
+    }
+
+    /**
+     * Nombres comunes que se muestran en la ficha: solo los activos, ordenados
+     * con {@link #ORDEN_PRESENTACION}.
+     * <p>
+     * La coleccion llega null en una especie recien construida por el builder,
+     * que todavia no la tiene, y llega vacia cuando la especie no tiene nombres
+     * o los tiene todos dados de baja. En los tres casos el Response sale con
+     * lista vacia y nunca con null, para que el consumidor pueda recorrerla sin
+     * comprobar nada.
+     */
+    private List<NombreComunResponse> nombresComunesVisibles(Especie entity) {
+        List<NombreComun> nombres = entity.getNombresComunes();
+        if (nombres == null || nombres.isEmpty()) {
+            return List.of();
+        }
+        return nombres.stream()
+                .filter(nombre -> Boolean.TRUE.equals(nombre.getActivo()))
+                .map(nombreComunMapper::toResponse)
+                .sorted(ORDEN_PRESENTACION)
+                .toList();
+    }
+
+    /**
+     * Aplica el mismo orden de presentacion a una lista que no viene de la
+     * entidad. Lo necesita el servicio al crear una especie con sus nombres
+     * anidados: en ese momento la coleccion perezosa de la especie recien
+     * insertada sigue en null, asi que los nombres que se acaban de crear no
+     * pueden salir de {@link #toResponse} y hay que colocarlos a mano. Vive
+     * aqui, y no en el servicio, para que el criterio de orden no se duplique.
+     */
+    public List<NombreComunResponse> ordenarParaPresentacion(List<NombreComunResponse> nombres) {
+        return nombres.stream().sorted(ORDEN_PRESENTACION).toList();
     }
 
     /**
