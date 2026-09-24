@@ -17,15 +17,6 @@ import sv.edu.ues.fmp.flora.entity.enums.UsuarioRolId;
 
 import java.time.LocalDateTime;
 
-/**
- * Asignacion de un rol a un usuario. Corresponde a la tabla de union
- * {@code usuario_rol}, cuya clave primaria es compuesta (id_usuario, id_rol)
- * y que no tiene columna de identidad autogenerada.
- * <p>
- * La columna {@code fecha_asignacion} es NOT NULL con DEFAULT CURRENT_TIMESTAMP
- * en la base; en Java se inicializa explicitamente para que el valor viaje
- * siempre en el INSERT.
- */
 @Entity
 @Table(name = "usuario_rol")
 @Getter

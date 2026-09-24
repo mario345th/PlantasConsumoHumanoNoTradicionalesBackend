@@ -12,12 +12,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/**
- * Rol del sistema. Corresponde a la tabla {@code rol}.
- * La columna {@code nombre} tiene restriccion UNIQUE en la base de datos.
- * La relacion con {@code permiso} se modela en la entidad propia
- * {@link RolPermiso}, que mapea la tabla de union {@code rol_permiso}.
- */
 @Entity
 @Table(name = "rol")
 @Getter

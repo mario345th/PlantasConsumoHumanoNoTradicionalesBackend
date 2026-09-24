@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,9 +32,19 @@ import tools.jackson.databind.exc.MismatchedInputException;
  * las 28 tablas del esquema, pero su mensaje es necesariamente generico. Si un
  * cliente recibe ese 409 generico, significa que a algun servicio le falta
  * anticipar su propia restriccion y devolver un mensaje especifico.
+ * <p>
+ * El manejador de {@link Exception} al final es la ultima red de todas:
+ * cualquier excepcion que no sea una de las anteriores (un bug, un
+ * NullPointerException, cualquier cosa no anticipada) cae ahi en vez de
+ * escapar hacia el manejo por defecto de Spring Boot, que expondria detalles
+ * internos si {@code server.error.include-message} no esta en {@code never}.
+ * El detalle real solo se escribe en el log del servidor; al cliente nunca
+ * se le devuelve el mensaje ni la clase de la excepcion original.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * El recurso pedido no existe -> 404 NOT FOUND.
@@ -249,6 +261,34 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(cuerpo);
+    }
+
+    /**
+     * Red de seguridad final: cualquier excepcion que no coincida con ninguno
+     * de los manejadores anteriores -> 500 INTERNAL SERVER ERROR.
+     * <p>
+     * Es deliberadamente inespecifica: al cliente solo se le dice que algo
+     * salio mal, nunca la clase de la excepcion ni su mensaje real (podria
+     * filtrar detalles internos, como ya ocurre a proposito con
+     * DataIntegrityViolationException). El stack trace completo si se escribe
+     * en el log del servidor, que es donde hay que ir a diagnosticar un 500.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> manejarExcepcionNoAnticipada(
+            Exception ex,
+            HttpServletRequest request) {
+
+        log.error("Excepcion no anticipada en {} {}", request.getMethod(), request.getRequestURI(), ex);
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error("Error interno")
+                .mensaje("Ocurrió un error inesperado. Si persiste, contacta al equipo de backend.")
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(cuerpo);
     }
 
     /**

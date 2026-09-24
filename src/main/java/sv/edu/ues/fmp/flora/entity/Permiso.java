@@ -12,10 +12,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/**
- * Permiso granular del sistema. Corresponde a la tabla {@code permiso}.
- * Solo la columna {@code codigo} es UNIQUE; {@code nombre} admite repeticiones.
- */
 @Entity
 @Table(name = "permiso")
 @Getter

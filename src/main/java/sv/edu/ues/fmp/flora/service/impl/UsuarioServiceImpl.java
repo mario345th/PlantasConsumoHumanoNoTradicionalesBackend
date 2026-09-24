@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import sv.edu.ues.fmp.flora.dto.request.UsuarioCambioClaveRequest;
 import sv.edu.ues.fmp.flora.dto.request.UsuarioCreationRequest;
 import sv.edu.ues.fmp.flora.dto.request.UsuarioLoginRequest;
 import sv.edu.ues.fmp.flora.dto.request.UsuarioUpdateRequest;
@@ -105,6 +106,28 @@ public class UsuarioServiceImpl implements UsuarioService {
     public void desactivar(Long id) {
         Usuario entidad = buscarOFallar(id);
         entidad.setActivo(false);
+    }
+
+    @Override
+    @Transactional
+    public UsuarioResponse reactivar(Long id) {
+        Usuario entidad = buscarOFallar(id);
+        entidad.setActivo(true);
+        Usuario actualizado = usuarioRepository.saveAndFlush(entidad);
+        return usuarioMapper.toResponse(actualizado);
+    }
+
+    @Override
+    @Transactional
+    public void cambiarClave(Long id, UsuarioCambioClaveRequest request) {
+        Usuario entidad = buscarOFallar(id);
+
+        if (!passwordEncoder.matches(request.claveActual(), entidad.getClaveHash())) {
+            throw new CredencialesInvalidasException("La clave actual no es correcta");
+        }
+
+        entidad.setClaveHash(passwordEncoder.encode(request.claveNueva()));
+        usuarioRepository.saveAndFlush(entidad);
     }
 
     @Override
