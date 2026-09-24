@@ -10,14 +10,6 @@ import lombok.Setter;
 import java.io.Serializable;
 import java.util.Objects;
 
-/**
- * Clave primaria compuesta de la tabla de union {@code rol_permiso}
- * (PRIMARY KEY (id_rol, id_permiso)).
- * <p>
- * {@code equals} y {@code hashCode} se implementan a mano sobre ambos campos
- * porque JPA los exige en las claves compuestas para determinar la identidad
- * de la entidad dentro del contexto de persistencia.
- */
 @Embeddable
 @Getter
 @Setter

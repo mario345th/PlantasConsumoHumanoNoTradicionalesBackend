@@ -9,4 +9,7 @@ public record UsuarioLoginRequest(
         @NotBlank(message = "La clave es obligatoria")
         String clave
 ) {
+    public UsuarioLoginRequest {
+        usuario = usuario == null ? null : usuario.trim();
+    }
 }

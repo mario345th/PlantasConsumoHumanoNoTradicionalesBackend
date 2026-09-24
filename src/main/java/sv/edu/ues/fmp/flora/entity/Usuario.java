@@ -16,26 +16,6 @@ import org.hibernate.generator.EventType;
 
 import java.time.LocalDateTime;
 
-/**
- * Usuario del sistema. Corresponde a la tabla {@code usuario}.
- * <p>
- * Restricciones que viven solo en la base y no se pueden expresar en JPA:
- * <ul>
- *   <li>{@code ck_usuario_correo}: CHECK que exige que {@code correo} tenga
- *       forma de direccion de correo.</li>
- *   <li>{@code uk_usuario_correo_lower} y {@code uk_usuario_nombre_lower}:
- *       indices unicos <em>funcionales</em> sobre {@code lower(correo)} y
- *       {@code lower(nombre_usuario)}. JPA solo sabe declarar UNIQUE sobre la
- *       columna tal cual, asi que aqui no se declaran; la deteccion de
- *       duplicados se hace en el servicio con consultas {@code ...IgnoreCase}.</li>
- *   <li>{@code trg_usuario_fecha_actualizacion}: trigger BEFORE UPDATE que
- *       reescribe {@code fecha_actualizacion} en cada modificacion.</li>
- * </ul>
- * Tanto {@code fecha_registro} (DEFAULT CURRENT_TIMESTAMP) como
- * {@code fecha_actualizacion} (DEFAULT mas trigger) las asigna PostgreSQL, por
- * eso van anotadas con {@link Generated}: Hibernate no las escribe, las relee
- * de la base despues de cada INSERT o UPDATE.
- */
 @Entity
 @Table(name = "usuario")
 @Getter

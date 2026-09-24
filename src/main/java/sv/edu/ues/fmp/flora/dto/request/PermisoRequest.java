@@ -1,6 +1,7 @@
 package sv.edu.ues.fmp.flora.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,14 +14,25 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RolRequest {
+public class PermisoRequest {
+
+    @NotBlank(message = "El código es obligatorio")
+    @Size(max = 80, message = "El código no puede exceder 80 caracteres")
+    @Pattern(
+            regexp = "^[A-Z0-9_]+$",
+            message = "El código solo puede contener letras mayúsculas, números y guiones bajos")
+    private String codigo;
 
     @NotBlank(message = "El nombre es obligatorio")
-    @Size(max = 50, message = "El nombre no puede exceder 50 caracteres")
+    @Size(max = 120, message = "El nombre no puede exceder 120 caracteres")
     private String nombre;
 
     @Size(max = 250, message = "La descripción no puede exceder 250 caracteres")
     private String descripcion;
+
+    public String getCodigo() {
+        return codigo == null ? null : codigo.trim();
+    }
 
     public String getNombre() {
         return nombre == null ? null : nombre.trim();

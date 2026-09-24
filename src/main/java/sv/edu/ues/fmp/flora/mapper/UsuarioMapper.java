@@ -17,8 +17,8 @@ public class UsuarioMapper {
 
     public Usuario toEntity(UsuarioCreationRequest request) {
         return Usuario.builder()
-                .nombres(request.nombre())
-                .apellidos(request.apellido())
+                .nombres(request.nombres())
+                .apellidos(request.apellidos())
                 .correo(request.correo())
                 .nombreUsuario(request.nombreUsuario())
                 .claveHash(passwordEncoder.encode(request.clave()))
@@ -26,8 +26,8 @@ public class UsuarioMapper {
     }
 
     public void updateEntity(Usuario entity, UsuarioUpdateRequest request) {
-        entity.setNombres(request.nombre());
-        entity.setApellidos(request.apellido());
+        entity.setNombres(request.nombres());
+        entity.setApellidos(request.apellidos());
         entity.setCorreo(request.correo());
         entity.setNombreUsuario(request.nombreUsuario());
     }

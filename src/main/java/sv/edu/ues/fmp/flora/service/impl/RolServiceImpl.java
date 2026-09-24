@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.RolRequest;
 import sv.edu.ues.fmp.flora.dto.response.RolResponse;
 import sv.edu.ues.fmp.flora.entity.Rol;
+import sv.edu.ues.fmp.flora.exception.IdInvalidoException;
 import sv.edu.ues.fmp.flora.exception.RecursoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.RolMapper;
@@ -86,9 +87,24 @@ public class RolServiceImpl implements RolService {
         entidad.setActivo(false);
     }
 
+    @Override
+    @Transactional
+    public RolResponse reactivar(Long id) {
+        Rol entidad = buscarOFallar(id);
+        entidad.setActivo(true);
+        return rolMapper.toResponse(entidad);
+    }
+
     private Rol buscarOFallar(Long id) {
+        validarId(id);
         return rolRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException(
                         "No existe un rol con id " + id));
+    }
+
+    private void validarId(Long id) {
+        if (id == null || id <= 0) {
+            throw new IdInvalidoException("El id del rol debe ser un valor positivo");
+        }
     }
 }

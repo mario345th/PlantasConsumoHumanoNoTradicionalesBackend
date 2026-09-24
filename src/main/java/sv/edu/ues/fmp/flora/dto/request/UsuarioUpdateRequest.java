@@ -8,11 +8,11 @@ import jakarta.validation.constraints.Size;
 public record UsuarioUpdateRequest(
         @NotBlank(message = "El nombre es obligatorio")
         @Size(max = 100, message = "El nombre no puede exceder 100 caracteres")
-        String nombre,
+        String nombres,
 
         @NotBlank(message = "El apellido es obligatorio")
         @Size(max = 100, message = "El apellido no puede exceder 100 caracteres")
-        String apellido,
+        String apellidos,
 
         @NotBlank(message = "El correo es obligatorio")
         @Email(message = "El correo no tiene un formato válido")
@@ -26,4 +26,10 @@ public record UsuarioUpdateRequest(
                 message = "El nombre de usuario solo puede contener letras, números, puntos, guiones y guiones bajos")
         String nombreUsuario
 ) {
+    public UsuarioUpdateRequest {
+        nombres = nombres == null ? null : nombres.trim();
+        apellidos = apellidos == null ? null : apellidos.trim();
+        correo = correo == null ? null : correo.trim();
+        nombreUsuario = nombreUsuario == null ? null : nombreUsuario.trim();
+    }
 }

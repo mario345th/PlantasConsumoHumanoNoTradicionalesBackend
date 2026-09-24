@@ -18,4 +18,6 @@ public interface RolService {
     RolResponse actualizar(Long id, RolRequest request);
 
     void desactivar(Long id);
+
+    RolResponse reactivar(Long id);
 }
