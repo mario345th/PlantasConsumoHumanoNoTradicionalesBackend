@@ -18,4 +18,5 @@ public class NutrienteResponse {
     private CategoriaNutriente categoria;
     private String descripcion;
     private Boolean activo;
+
 }

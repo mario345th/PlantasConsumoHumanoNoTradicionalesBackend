@@ -16,9 +16,7 @@ public interface NutrienteRepository extends JpaRepository<Nutriente, Long> {
     List<Nutriente> findAllByOrderByIdNutrienteAsc();
     List<Nutriente> findByActivoTrueOrderByIdNutrienteAsc();
 
-    // NUEVO: Buscar coincidencias parciales en el nombre (ignorando mayúsculas)
     List<Nutriente> findByNombreContainingIgnoreCaseAndActivoTrue(String palabraClave);
 
-    // NUEVO: Filtrar exactamente por una categoría
     List<Nutriente> findByCategoriaAndActivoTrueOrderByIdNutrienteAsc(CategoriaNutriente categoria);
 }

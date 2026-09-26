@@ -29,7 +29,6 @@ public class NutrienteServiceImpl implements NutrienteService {
     @Transactional(readOnly = true)
     public List<NutrienteResponse> listarTodas() {
         List<NutrienteResponse> respuestas = new ArrayList<>();
-        // Cambio aquí: findAllByOrderByIdNutrienteAsc()
         for (Nutriente entidad : nutrienteRepository.findAllByOrderByIdNutrienteAsc()) {
             respuestas.add(nutrienteMapper.toResponse(entidad));
         }
@@ -56,9 +55,16 @@ public class NutrienteServiceImpl implements NutrienteService {
     @Override
     @Transactional
     public NutrienteResponse crear(NutrienteRequest request) {
-        if (nutrienteRepository.existsByNombreIgnoreCase(request.getNombre())) {
-            throw new RecursoDuplicadoException(
-                    "Ya existe un nutriente con el nombre " + request.getNombre());
+        Optional<Nutriente> existente = nutrienteRepository.findByNombreIgnoreCase(request.getNombre());
+
+        if (existente.isPresent()) {
+            if (existente.get().getActivo()) {
+                throw new RecursoDuplicadoException(
+                        "Ya existe un nutriente con el nombre " + request.getNombre());
+            } else {
+                throw new RecursoDuplicadoException(
+                        "Ya existe el nutriente '" + request.getNombre() + "', pero está desactivado. Actívelo en vez de crear uno nuevo.");
+            }
         }
 
         Nutriente nueva = nutrienteMapper.toEntity(request);
@@ -75,8 +81,13 @@ public class NutrienteServiceImpl implements NutrienteService {
                 nutrienteRepository.findByNombreIgnoreCase(request.getNombre());
 
         if (conMismoNombre.isPresent() && !conMismoNombre.get().getIdNutriente().equals(id)) {
-            throw new RecursoDuplicadoException(
-                    "Ya existe otro nutriente con el nombre " + request.getNombre());
+            if (conMismoNombre.get().getActivo()) {
+                throw new RecursoDuplicadoException(
+                        "Ya existe otro nutriente con el nombre " + request.getNombre());
+            } else {
+                throw new RecursoDuplicadoException(
+                        "Ya existe el nutriente '" + request.getNombre() + "', pero está desactivado. Actívelo en vez de ocupar su nombre.");
+            }
         }
 
         nutrienteMapper.updateEntity(entidad, request);

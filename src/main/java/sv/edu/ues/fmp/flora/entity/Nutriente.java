@@ -29,6 +29,7 @@ import sv.edu.ues.fmp.flora.entity.enums.CategoriaNutriente;
 @Builder
 public class Nutriente {
 
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_nutriente", nullable = false, updatable = false)

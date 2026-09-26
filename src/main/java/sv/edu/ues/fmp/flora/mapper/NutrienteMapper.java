@@ -4,27 +4,29 @@ import org.springframework.stereotype.Component;
 import sv.edu.ues.fmp.flora.dto.request.NutrienteRequest;
 import sv.edu.ues.fmp.flora.dto.response.NutrienteResponse;
 import sv.edu.ues.fmp.flora.entity.Nutriente;
+import sv.edu.ues.fmp.flora.entity.enums.CategoriaNutriente;
 
 @Component
 public class NutrienteMapper {
 
-    // Convierte DTOs a entidades
     public Nutriente toEntity(NutrienteRequest request) {
         return Nutriente.builder()
-                .nombre(request.getNombre())
-                .categoria(request.getCategoria())
-                .descripcion(request.getDescripcion())
+                .nombre(request.getNombre() != null ? request.getNombre().trim() : null)
+                .categoria(CategoriaNutriente.valueOf(request.getCategoria().trim()))
+                .descripcion(request.getDescripcion() != null && !request.getDescripcion().trim().isEmpty()
+                        ? request.getDescripcion().trim()
+                        : null)
                 .build();
     }
 
-    // Actualiza la entidad existente
     public void updateEntity(Nutriente entity, NutrienteRequest request) {
-        entity.setNombre(request.getNombre());
-        entity.setCategoria(request.getCategoria());
-        entity.setDescripcion(request.getDescripcion());
+        entity.setNombre(request.getNombre() != null ? request.getNombre().trim() : null);
+        entity.setCategoria(CategoriaNutriente.valueOf(request.getCategoria().trim()));
+        entity.setDescripcion(request.getDescripcion() != null && !request.getDescripcion().trim().isEmpty()
+                ? request.getDescripcion().trim()
+                : null);
     }
 
-    // Entidad a DTO de respuesta
     public NutrienteResponse toResponse(Nutriente entity) {
         return NutrienteResponse.builder()
                 .idNutriente(entity.getIdNutriente())

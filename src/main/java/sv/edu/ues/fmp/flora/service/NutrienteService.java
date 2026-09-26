@@ -12,8 +12,6 @@ public interface NutrienteService {
     NutrienteResponse crear(NutrienteRequest request);
     NutrienteResponse actualizar(Long id, NutrienteRequest request);
     void desactivar(Long id);
-
-    // NUEVOS MÉTODOS
     List<NutrienteResponse> buscarPorNombre(String palabraClave);
     List<NutrienteResponse> buscarPorCategoria(CategoriaNutriente categoria);
 }
