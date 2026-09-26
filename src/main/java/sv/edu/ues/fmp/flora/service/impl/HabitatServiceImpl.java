@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.HabitatRequest;
@@ -47,6 +49,13 @@ public class HabitatServiceImpl implements HabitatService {
     @Override
     @Transactional(readOnly = true)
     public List<HabitatResponse> buscarPorNombre(String nombre) {
+        if (nombre == null || nombre.trim().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El parámetro de búsqueda 'nombre' es obligatorio y no puede estar vacío"
+            );
+        }
+
         List<HabitatResponse> respuestas = new ArrayList<>();
         for (Habitat entidad : habitatRepository.findByNombreContainingIgnoreCase(nombre.trim())) {
             respuestas.add(habitatMapper.toResponse(entidad));
@@ -63,12 +72,26 @@ public class HabitatServiceImpl implements HabitatService {
     @Override
     @Transactional
     public HabitatResponse crear(HabitatRequest request) {
-        if (habitatRepository.existsByNombreIgnoreCase(request.getNombre())) {
+        Optional<Habitat> existente = habitatRepository.findByNombreIgnoreCase(request.getNombre().trim());
+        if (existente.isPresent()) {
+            Habitat h = existente.get();
+            if (Boolean.FALSE.equals(h.getActivo())) {
+                // Si el hábitat ya existe pero estaba inactivo, lo reactivamos automáticamente
+                h.setActivo(true);
+                if (request.getDescripcion() != null) {
+                    h.setDescripcion(request.getDescripcion());
+                }
+                Habitat guardado = habitatRepository.save(h);
+                return habitatMapper.toResponse(guardado);
+            }
             throw new RecursoDuplicadoException(
-                    "Ya existe un hábitat con el nombre " + request.getNombre());
+                    "Ya existe un hábitat con el nombre " + request.getNombre().trim());
         }
 
         Habitat nuevo = habitatMapper.toEntity(request);
+        if (nuevo.getActivo() == null) {
+            nuevo.setActivo(true);
+        }
         Habitat guardado = habitatRepository.save(nuevo);
 
         return habitatMapper.toResponse(guardado);
@@ -79,12 +102,15 @@ public class HabitatServiceImpl implements HabitatService {
     public HabitatResponse actualizar(Long id, HabitatRequest request) {
         Habitat entidad = buscarOFallar(id);
 
-        Optional<Habitat> conMismoNombre =
-                habitatRepository.findByNombreIgnoreCase(request.getNombre());
-        if (conMismoNombre.isPresent()
-                && !conMismoNombre.get().getIdHabitat().equals(id)) {
+        Optional<Habitat> conMismoNombre = habitatRepository.findByNombreIgnoreCase(request.getNombre().trim());
+        if (conMismoNombre.isPresent() && !conMismoNombre.get().getIdHabitat().equals(id)) {
+            Habitat h = conMismoNombre.get();
+            if (Boolean.FALSE.equals(h.getActivo())) {
+                throw new RecursoDuplicadoException(
+                        "El hábitat '" + request.getNombre().trim() + "' ya existe, pero está desactivado");
+            }
             throw new RecursoDuplicadoException(
-                    "Ya existe otro hábitat con el nombre " + request.getNombre());
+                    "Ya existe otro hábitat con el nombre " + request.getNombre().trim());
         }
 
         habitatMapper.updateEntity(entidad, request);
