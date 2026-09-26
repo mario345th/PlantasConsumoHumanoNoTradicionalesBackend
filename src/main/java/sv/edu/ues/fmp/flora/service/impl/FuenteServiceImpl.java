@@ -54,6 +54,8 @@ public class FuenteServiceImpl implements FuenteService {
     @Override
     @Transactional
     public FuenteResponse crear(FuenteRequest request) {
+        normalizar(request);
+
         if (fuenteRepository.existsByTituloIgnoreCase(request.getTitulo())) {
             throw new RecursoDuplicadoException(
                     "Ya existe una fuente con el título " + request.getTitulo());
@@ -69,6 +71,8 @@ public class FuenteServiceImpl implements FuenteService {
     @Override
     @Transactional
     public FuenteResponse actualizar(Long id, FuenteRequest request) {
+        normalizar(request);
+
         Fuente entidad = buscarOFallar(id);
 
         Optional<Fuente> conMismoTitulo =
@@ -97,5 +101,19 @@ public class FuenteServiceImpl implements FuenteService {
         return fuenteRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException(
                         "No existe una fuente con id " + id));
+    }
+
+
+    private void normalizar(FuenteRequest request) {
+        request.setTitulo(limpiarEspacios(request.getTitulo()));
+        request.setUrl(limpiarEspacios(request.getUrl()));
+    }
+
+    private String limpiarEspacios(String valor) {
+        if (valor == null) {
+            return null;
+        }
+        String limpio = valor.trim().replaceAll("\\s+", " ");
+        return limpio.isEmpty() ? null : limpio;
     }
 }
