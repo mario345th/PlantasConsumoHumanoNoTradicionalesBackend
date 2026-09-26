@@ -6,26 +6,23 @@ import org.springframework.transaction.annotation.Transactional;
 import sv.edu.ues.fmp.flora.dto.request.BeneficioRequest;
 import sv.edu.ues.fmp.flora.dto.response.BeneficioResponse;
 import sv.edu.ues.fmp.flora.entity.Beneficio;
+import sv.edu.ues.fmp.flora.exception.DatoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.BeneficioMapper;
 import sv.edu.ues.fmp.flora.repository.BeneficioRepository;
 import sv.edu.ues.fmp.flora.service.BeneficioService;
 
 import java.util.List;
+import java.util.Optional;
 
-/**
- * Implementacion del servicio para la gestion de beneficios.
- */
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class BeneficioServiceImpl implements BeneficioService {
 
     private final BeneficioRepository beneficioRepository;
     private final BeneficioMapper beneficioMapper;
 
-    /**
-     * Lista todos los beneficios registrados.
-     */
     @Override
     @Transactional(readOnly = true)
     public List<BeneficioResponse> listarTodos() {
@@ -36,9 +33,6 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .toList();
     }
 
-    /**
-     * Obtiene un beneficio por su ID.
-     */
     @Override
     @Transactional(readOnly = true)
     public BeneficioResponse obtenerPorId(Long id) {
@@ -48,27 +42,44 @@ public class BeneficioServiceImpl implements BeneficioService {
         return beneficioMapper.toResponse(beneficio);
     }
 
-    /**
-     * Registra un nuevo beneficio.
-     */
     @Override
-    @Transactional
     public BeneficioResponse crear(BeneficioRequest request) {
 
-        Beneficio beneficio =
-                beneficioMapper.toEntity(request);
+        String nombreNormalizado = normalizarTexto(request.getNombre());
+        String descripcionNormalizada = normalizarTexto(request.getDescripcion());
 
-        Beneficio guardado =
-                beneficioRepository.save(beneficio);
+        /*
+         * Primero normalizamos el texto y después verificamos
+         * si el beneficio ya existe.
+         */
+        if (beneficioRepository.existsByNombreIgnoreCase(nombreNormalizado)) {
+
+            throw new DatoDuplicadoException(
+                    "Ya existe un beneficio con el nombre: "
+                            + nombreNormalizado
+            );
+        }
+
+        Beneficio beneficio = beneficioMapper.toEntity(request);
+
+        /*
+         * Guardamos los valores normalizados.
+         */
+        beneficio.setNombre(nombreNormalizado);
+        beneficio.setDescripcion(descripcionNormalizada);
+
+        /*
+         * Si activo fue omitido del JSON, BeneficioRequest
+         * lo habrá establecido en true.
+         */
+        beneficio.setActivo(request.getActivo());
+
+        Beneficio guardado = beneficioRepository.save(beneficio);
 
         return beneficioMapper.toResponse(guardado);
     }
 
-    /**
-     * Actualiza un beneficio existente.
-     */
     @Override
-    @Transactional
     public BeneficioResponse actualizar(
             Long id,
             BeneficioRequest request
@@ -76,10 +87,42 @@ public class BeneficioServiceImpl implements BeneficioService {
 
         Beneficio beneficio = buscarPorId(id);
 
-        beneficioMapper.updateEntity(
-                beneficio,
-                request
-        );
+        String nombreNormalizado = normalizarTexto(request.getNombre());
+        String descripcionNormalizada = normalizarTexto(request.getDescripcion());
+
+        /*
+         * Buscar si ya existe otro beneficio con ese nombre.
+         */
+        Optional<Beneficio> beneficioExistente =
+                beneficioRepository.findByNombreIgnoreCase(nombreNormalizado);
+
+        /*
+         * Si existe y no es el mismo registro que estamos actualizando,
+         * entonces es un duplicado.
+         */
+        if (beneficioExistente.isPresent()
+                && !beneficioExistente.get()
+                .getIdBeneficio()
+                .equals(id)) {
+
+            throw new DatoDuplicadoException(
+                    "Ya existe otro beneficio con el nombre: "
+                            + nombreNormalizado
+            );
+        }
+
+        /*
+         * Actualizamos normalmente utilizando el mapper.
+         */
+        beneficioMapper.updateEntity(beneficio, request);
+
+        /*
+         * Sobrescribimos nombre y descripción con los
+         * valores normalizados.
+         */
+        beneficio.setNombre(nombreNormalizado);
+        beneficio.setDescripcion(descripcionNormalizada);
+        beneficio.setActivo(request.getActivo());
 
         Beneficio actualizado =
                 beneficioRepository.save(beneficio);
@@ -87,11 +130,7 @@ public class BeneficioServiceImpl implements BeneficioService {
         return beneficioMapper.toResponse(actualizado);
     }
 
-    /**
-     * Elimina un beneficio.
-     */
     @Override
-    @Transactional
     public void eliminar(Long id) {
 
         Beneficio beneficio = buscarPorId(id);
@@ -99,21 +138,36 @@ public class BeneficioServiceImpl implements BeneficioService {
         beneficioRepository.delete(beneficio);
     }
 
-    /**
-     * Busca internamente un beneficio.
-     *
-     * @param id identificador del beneficio.
-     * @return entidad encontrada.
-     * @throws RecursoNoEncontradoException si el beneficio no existe.
-     */
     private Beneficio buscarPorId(Long id) {
 
-        return beneficioRepository
-                .findById(id)
-                .orElseThrow(
-                        () -> new RecursoNoEncontradoException(
-                                "No existe un beneficio con id: " + id
+        return beneficioRepository.findById(id)
+                .orElseThrow(() ->
+                        new RecursoNoEncontradoException(
+                                "No se encontró el beneficio con id: " + id
                         )
                 );
+    }
+
+    /*
+     * Elimina espacios al inicio y al final.
+     *
+     * También convierte varios espacios consecutivos
+     * dentro del texto en un único espacio.
+     *
+     * Ejemplo:
+     *
+     * "  Fortalece   el   sistema  "
+     *
+     * se convierte en:
+     *
+     * "Fortalece el sistema"
+     */
+    private String normalizarTexto(String texto) {
+        if (texto == null) {
+            return null;
+        }
+        return texto
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 }
