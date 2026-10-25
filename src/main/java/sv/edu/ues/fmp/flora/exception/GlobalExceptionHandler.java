@@ -12,6 +12,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -158,6 +159,52 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
+                .body(cuerpo);
+    }
+
+    /**
+     * Un {@code @PreAuthorize} no se cumplió -> 403 FORBIDDEN.
+     * <p>
+     * Hace falta por donde viaja la excepción. {@code AccessDeniedException}
+     * tiene dos orígenes y solo uno lo atiende Spring Security por su cuenta:
+     * <ul>
+     *   <li>La que nace en la cadena de filtros (la matriz de rutas de
+     *       {@code SecurityConfig}) la atrapa el
+     *       {@code ExceptionTranslationFilter} y la enruta al
+     *       {@code AccesoDenegadoHandler}, que ya devuelve este mismo
+     *       cuerpo.</li>
+     *   <li>La que lanza method-security al evaluar un {@code @PreAuthorize}
+     *       sale del método del controlador hacia arriba y la resuelve el
+     *       DispatcherServlet, o sea esta clase. Sin este manejador caía en
+     *       {@link #manejarExcepcionNoAnticipada} y el cliente recibía un 500
+     *       "Error interno" por un fallo que es suyo y no del servidor.</li>
+     * </ul>
+     * El mensaje es el mismo del {@code AccesoDenegadoHandler} para que al
+     * cliente le dé igual por cuál de los dos caminos se le negó el acceso, y
+     * tampoco dice qué condición incumplió.
+     * <p>
+     * Nota para cuando se agreguen más {@code @PreAuthorize}: si alguna vez
+     * una ruta queda {@code permitAll} en la matriz pero con
+     * {@code @PreAuthorize} en el método, un cliente anónimo recibiría aquí un
+     * 403 donde Spring Security habría respondido 401 invitando a
+     * autenticarse. Hoy no ocurre: todo lo que lleva {@code @PreAuthorize}
+     * está además detrás de {@code authenticated()} en la matriz.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> manejarAccesoDenegado(
+            AccessDeniedException ex,
+            HttpServletRequest request) {
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.FORBIDDEN.value())
+                .error("Prohibido")
+                .mensaje("No tiene los permisos necesarios para realizar esta operación")
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
                 .body(cuerpo);
     }
 

@@ -2,6 +2,7 @@ package sv.edu.ues.fmp.flora.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -121,13 +122,40 @@ public class UsuarioController {
     }
 
     @Operation(summary = "Cambiar la contraseña de un usuario",
-            description = "Exige la clave actual, no solo el id: como todavía no hay Spring "
-                    + "Security validando quién hace la petición, esta es la única barrera "
-                    + "contra que alguien le cambie la clave a otra cuenta.")
+            description = "Autoservicio: un usuario solo puede cambiar su propia clave. El id "
+                    + "de la ruta tiene que ser el del usuario del token; si no, 403. Además "
+                    + "sigue exigiendo la clave actual. El restablecimiento por olvido es "
+                    + "otro flujo (POST /api/usuarios/recuperar-clave).")
     @ApiResponse(responseCode = "204", description = "Clave actualizada")
     @ApiResponse(responseCode = "400", description = "El cuerpo de la petición no es válido")
-    @ApiResponse(responseCode = "401", description = "La clave actual no es correcta")
+    @ApiResponse(responseCode = "401", description = "La clave actual no es correcta, o falta el token")
+    @ApiResponse(responseCode = "403", description = "El id no es el del usuario autenticado")
     @ApiResponse(responseCode = "404", description = "No existe un usuario con ese id")
+    /*
+     * Guard de propiedad contra escalacion horizontal.
+     *
+     * Hasta aqui el endpoint solo exigia la clave actual, nunca comprobaba de
+     * quien era el {id}: cualquier usuario autenticado que conociera la clave
+     * actual de otro podia cambiarsela. Validar la clave no alcanza, porque
+     * responde "esta clave es correcta" sobre una cuenta ajena.
+     *
+     * El chequeo va en @PreAuthorize y no dentro del servicio a proposito:
+     * method-security corre ANTES de entrar al metodo, asi que un intento
+     * sobre el id de otro se corta antes de tocar la base y antes de comparar
+     * ninguna clave. Un atacante no llega a distinguir "clave actual correcta
+     * sobre cuenta ajena" de "clave actual incorrecta sobre cuenta ajena":
+     * las dos dan 403.
+     *
+     * authentication.name es el sub del token (el id del usuario), y es
+     * String; #id es Long, y comparar Long con String en SpEL siempre da
+     * falso, de ahi el toString().
+     *
+     * Deliberadamente NO lleva un "or hasRole('ADMIN')": este endpoint pide la
+     * clave actual, que un administrador no tiene. El reseteo por
+     * administrador, si el equipo lo quiere, es otro endpoint con sus propias
+     * reglas.
+     */
+    @PreAuthorize("#id.toString() == authentication.name")
     @PutMapping("/{id}/clave")
     public ResponseEntity<Void> cambiarClave(
             @PathVariable Long id,

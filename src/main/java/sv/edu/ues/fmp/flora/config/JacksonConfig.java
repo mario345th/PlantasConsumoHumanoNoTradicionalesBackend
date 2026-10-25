@@ -17,7 +17,7 @@ public class JacksonConfig {
      * peticion: un campo tiene que llegar con el tipo JSON que le corresponde,
      * no con uno que Jackson sepa convertir por su cuenta.
      * <p>
-     *     
+     *
      * Hacia {@link LogicalType#Textual} se rechaza el numero, el booleano y el
      * decimal donde va texto: {@code "nombre": 42} no es un nombre.
      * <p>

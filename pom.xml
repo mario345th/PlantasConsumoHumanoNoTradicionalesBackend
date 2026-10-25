@@ -55,6 +55,32 @@
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-crypto</artifactId>
 		</dependency>
+
+		<!--
+			Seguridad / JWT.
+			spring-boot-starter-security trae el SecurityFilterChain y arrastra
+			spring-security-crypto (el BCrypt que ya usaba el modulo de
+			usuarios), asi que la dependencia suelta de arriba queda redundante
+			pero se deja para no tocar lo que ya estaba.
+			resource-server + jose son la via nativa de Spring para firmar y
+			validar el JWT con Nimbus, sin meter una segunda libreria JSON: el
+			proyecto ya esta en Jackson 3 (tools.jackson) y jjwt-jackson habria
+			arrastrado Jackson 2.
+			Sin <version>: las tres las gestiona el BOM de
+			spring-boot-starter-parent 4.1.1.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-jose</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
