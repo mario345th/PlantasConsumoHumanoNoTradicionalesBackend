@@ -32,4 +32,15 @@ public interface EspecieRepository extends JpaRepository<Especie, Long> {
 
     /** Consulta del catalogo publico; se apoya en el indice {@code idx_especie_estado}. */
     List<Especie> findByEstadoPublicacionAndActivaTrue(EstadoPublicacion estado);
+
+    /**
+     * Detalle del catalogo publico: el id tiene que existir y ademas estar
+     * PUBLICADA y activa.
+     * <p>
+     * El estado va en la consulta y no se comprueba despues sobre la entidad
+     * para que un id no publicado se resuelva como "no encontrado" sin que la
+     * ficha llegue a cargarse.
+     */
+    Optional<Especie> findByIdEspecieAndEstadoPublicacionAndActivaTrue(
+            Long idEspecie, EstadoPublicacion estado);
 }

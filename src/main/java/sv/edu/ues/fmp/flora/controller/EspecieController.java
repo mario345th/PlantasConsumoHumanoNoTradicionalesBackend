@@ -40,8 +40,14 @@ public class EspecieController {
 
     private final EspecieService especieService;
 
-    @Operation(summary = "Listar especies, opcionalmente filtradas por estado")
+    @Operation(summary = "Listar especies, opcionalmente filtradas por estado",
+            description = "Vista interna: devuelve fichas en cualquier estado, BORRADOR y "
+                    + "EN_REVISION incluidos, por lo que exige ESPECIE_CONSULTAR. El catálogo "
+                    + "de cara al público es GET /api/especies/publicadas, que no pide token.")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
+    @ApiResponse(responseCode = "401", description = "Falta el token")
+    @ApiResponse(responseCode = "403", description = "El token no trae ESPECIE_CONSULTAR")
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping
     public ResponseEntity<List<EspecieResponse>> listar(
             @RequestParam(name = "estado", required = false) EstadoPublicacion estado) {
@@ -60,7 +66,25 @@ public class EspecieController {
         return ResponseEntity.ok(especieService.listarPublicadas());
     }
 
-    @Operation(summary = "Obtener una especie por su id")
+    @Operation(summary = "Catálogo público: detalle de una especie publicada",
+            description = "Único detalle por id que no pide token. Si la ficha no está "
+                    + "PUBLICADA y activa responde 404, el mismo código y el mismo mensaje "
+                    + "que un id inexistente, para que no sirva para averiguar qué fichas "
+                    + "hay en preparación.")
+    @ApiResponse(responseCode = "200", description = "Ficha obtenida")
+    @ApiResponse(responseCode = "404", description = "No hay una especie publicada con ese id")
+    @GetMapping("/publicadas/{id}")
+    public ResponseEntity<EspecieResponse> obtenerPublicadaPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(especieService.obtenerPublicadaPorId(id));
+    }
+
+    @Operation(summary = "Obtener una especie por su id, en cualquier estado",
+            description = "Vista interna: responde igual para una ficha publicada que para "
+                    + "una en BORRADOR, por lo que exige ESPECIE_CONSULTAR. El detalle "
+                    + "público es GET /api/especies/publicadas/{id}.")
+    @ApiResponse(responseCode = "401", description = "Falta el token")
+    @ApiResponse(responseCode = "403", description = "El token no trae ESPECIE_CONSULTAR")
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping("/{id}")
     public ResponseEntity<EspecieResponse> obtenerPorId(@PathVariable Long id) {
         return ResponseEntity.ok(especieService.obtenerPorId(id));

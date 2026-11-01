@@ -83,6 +83,20 @@ public class EspecieServiceImpl implements EspecieService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public EspecieResponse obtenerPublicadaPorId(Long id) {
+        // El filtro va en la consulta y no sobre la entidad ya cargada para no
+        // dar lugar a un 200 por descuido si manana alguien agrega un estado
+        // nuevo al enum: lo que no sea PUBLICADA y activa no entra.
+        Especie publicada = especieRepository
+                .findByIdEspecieAndEstadoPublicacionAndActivaTrue(id, EstadoPublicacion.PUBLICADA)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "No existe una especie con id " + id));
+
+        return especieMapper.toResponse(publicada);
+    }
+
+    @Override
     @Transactional
     public EspecieResponse crear(EspecieRequest request) {
         normalizar(request);

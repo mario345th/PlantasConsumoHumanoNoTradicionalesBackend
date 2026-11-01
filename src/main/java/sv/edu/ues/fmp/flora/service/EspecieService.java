@@ -26,6 +26,25 @@ public interface EspecieService {
 
     EspecieResponse obtenerPorId(Long id);
 
+    /**
+     * Detalle para el catalogo publico: devuelve la ficha solo si esta
+     * PUBLICADA y activa.
+     * <p>
+     * Existe aparte de {@link #obtenerPorId(Long)} porque ese devuelve
+     * cualquier estado, borradores incluidos, y es el que lee el personal
+     * interno. Este es el que puede quedar abierto al anonimo.
+     * <p>
+     * Cuando la ficha existe pero no esta publicada lanza la misma
+     * {@code RecursoNoEncontradoException} que cuando el id no existe, y con
+     * el mismo texto. Es deliberado: si el mensaje distinguiera "no existe" de
+     * "existe pero esta en borrador", el endpoint serviria para averiguar que
+     * ids hay en preparacion probando numeros.
+     *
+     * @throws sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException
+     *         si no hay una especie publicada y activa con ese id
+     */
+    EspecieResponse obtenerPublicadaPorId(Long id);
+
     /** Crea la especie y su taxonomia en la misma transaccion. */
     EspecieResponse crear(EspecieRequest request);
 

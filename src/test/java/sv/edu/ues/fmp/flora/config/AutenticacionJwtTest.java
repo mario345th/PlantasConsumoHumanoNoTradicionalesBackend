@@ -73,8 +73,17 @@ class AutenticacionJwtTest {
     /** Ruta protegida cualquiera, sirve para comprobar que exige token. */
     private static final String RUTA_PROTEGIDA = "/api/usuarios";
 
-    /** Ruta del catalogo que la matriz de arranque deja abierta en GET. */
-    private static final String RUTA_PUBLICA = "/api/especies";
+    /**
+     * Ruta del catalogo que la matriz deja abierta en GET.
+     * <p>
+     * Es {@code /publicadas} y no {@code /api/especies} porque ese ultimo dejo
+     * de ser publico: devolvia tambien las fichas en BORRADOR. Lo que queda
+     * abierto es el listado del catalogo, que solo trae PUBLICADA.
+     */
+    private static final String RUTA_PUBLICA = "/api/especies/publicadas";
+
+    /** Ruta del catalogo cuya escritura exige token; sirve para el 401 del filtro. */
+    private static final String RUTA_ESCRITURA_CATALOGO = "/api/especies";
 
     @Autowired
     private MockMvc mockMvc;
@@ -288,7 +297,7 @@ class AutenticacionJwtTest {
 
     @Test
     void catalogoPublico_sigueAbiertoSinToken() throws Exception {
-        mockMvc.perform(get(RUTA_PUBLICA).param("pagina", "0").param("tamanio", "1"))
+        mockMvc.perform(get(RUTA_PUBLICA))
                 .andExpect(status().isOk());
     }
 
@@ -321,7 +330,7 @@ class AutenticacionJwtTest {
 
     @Test
     void escrituraEnElCatalogo_sinToken_devuelve401() throws Exception {
-        mockMvc.perform(post(RUTA_PUBLICA)
+        mockMvc.perform(post(RUTA_ESCRITURA_CATALOGO)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnauthorized());

@@ -74,6 +74,18 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  *         sin login y asi se queda.</td>
  *   </tr>
  *   <tr>
+ *     <td>{@code GET} de las rutas en {@link #ESPECIE_PUBLICA}</td>
+ *     <td>publico</td>
+ *     <td>Las consultas de especie que solo devuelven fichas PUBLICADA, mas
+ *         los sub-recursos que pinta la ficha publica.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code GET /api/especies} y {@code GET /api/especies/{id}}</td>
+ *     <td><strong>ESPECIE_CONSULTAR (cambia)</strong></td>
+ *     <td>Devuelven fichas en cualquier estado. Eran publicas y filtraban
+ *         borradores a cualquier anonimo.</td>
+ *   </tr>
+ *   <tr>
  *     <td>{@code POST}, {@code PUT}, {@code PATCH} y {@code DELETE} de esas
  *         mismas rutas del catalogo</td>
  *     <td><strong>autenticado (cambia)</strong></td>
@@ -95,11 +107,13 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  *   </tr>
  * </table>
  *
- * <h2>Lo que todavia no hace</h2>
- * Solo distingue autenticado de anonimo: ninguna ruta exige todavia un rol
- * concreto. Para eso esta {@link EnableMethodSecurity}, que deja listos los
- * {@code @PreAuthorize} por rol o por permiso en controladores y servicios
- * cuando el equipo defina que rol puede hacer que.
+ * <h2>Donde se decide el permiso concreto</h2>
+ * Esta matriz solo distingue anonimo de autenticado. Que permiso hace falta
+ * para cada operacion se decide con {@code @PreAuthorize} en los
+ * controladores, habilitado por {@link EnableMethodSecurity}. Los dos niveles
+ * se complementan y el orden importa: quien llega sin token lo corta el filtro
+ * con un 401 y nunca llega al metodo; quien llega con token pero sin el
+ * permiso lo corta method-security con un 403.
  */
 @Configuration
 @EnableMethodSecurity
@@ -109,17 +123,18 @@ public class SecurityConfig {
     /**
      * Rutas del catalogo botanico cuyos {@code GET} quedan publicos.
      * <p>
-     * {@code /api/especies/**} cubre tambien los controladores anidados
-     * (fuentes, habitats, imagenes, nombres comunes, partes comestibles y
-     * videos de una especie), y {@code /api/preparaciones-consumo/**} cubre
-     * sus imagenes y videos.
+     * {@code /api/preparaciones-consumo/**} cubre tambien sus imagenes y
+     * videos.
+     * <p>
+     * Las rutas de especie <strong>no</strong> estan aqui: tienen su propia
+     * lista en {@link #ESPECIE_PUBLICA}, porque no todas sus consultas se
+     * pueden abrir igual.
      */
     private static final String[] CATALOGO_PUBLICO = {
             "/api/aportes-nutricionales/**",
             "/api/beneficios/**",
             "/api/departamentos/**",
             "/api/epocas-cosecha/**",
-            "/api/especies/**",
             "/api/fuentes/**",
             "/api/habitats/**",
             "/api/imagenes-especie/**",
@@ -134,6 +149,52 @@ public class SecurityConfig {
             "/api/ubicaciones/**",
             "/api/videos-especie/**",
             "/api/videos-preparacion/**"
+    };
+
+    /**
+     * Rutas de especie cuyos {@code GET} quedan abiertos al anonimo.
+     *
+     * <h2>Que cambio y por que</h2>
+     * Antes aqui estaba {@code /api/especies/**} entero, dentro de
+     * {@link #CATALOGO_PUBLICO}. Eso dejaba publicos tambien
+     * {@code GET /api/especies} --que por dentro es un {@code findAll()}-- y
+     * {@code GET /api/especies/{id}}, que devuelve la ficha en cualquier
+     * estado. Cualquiera sin token podia listar los BORRADOR y EN_REVISION, o
+     * pedirlos con {@code ?estado=BORRADOR}. Esos dos endpoints ahora exigen
+     * {@code ESPECIE_CONSULTAR} y no figuran en ninguna lista de permitidos.
+     * <p>
+     * Queda abierto solo lo que por construccion no puede devolver otra cosa
+     * que fichas PUBLICADA y activas: el listado del catalogo y el detalle
+     * {@code /publicadas/{id}}, que resuelve a 404 lo que no este publicado.
+     *
+     * <h2>Lo que sigue abierto y no deberia estarlo del todo</h2>
+     * Los sub-recursos de una especie (sus fuentes, habitats, imagenes,
+     * nombres comunes, partes comestibles y videos) siguen publicos en
+     * {@code GET}: son los que pinta la ficha publica y cerrarlos romperia el
+     * catalogo. Pero <strong>ninguno filtra por el estado de la especie
+     * padre</strong>, asi que quien conozca el id de un borrador puede ver por
+     * esta via su multimedia y sus nombres comunes. Cerrarlo pide que cada uno
+     * de esos seis servicios compruebe el estado del padre; no entra en este
+     * cambio y queda anotado para el equipo.
+     */
+    private static final String[] ESPECIE_PUBLICA = {
+            "/api/especies/publicadas",
+            "/api/especies/publicadas/*",
+            // Las dos formas de cada sub-recurso: con y sin segmentos
+            // adicionales, para no depender de si el comodin de cola tambien
+            // casa la ruta sin barra final.
+            "/api/especies/*/fuentes",
+            "/api/especies/*/fuentes/**",
+            "/api/especies/*/habitats",
+            "/api/especies/*/habitats/**",
+            "/api/especies/*/imagenes",
+            "/api/especies/*/imagenes/**",
+            "/api/especies/*/nombres-comunes",
+            "/api/especies/*/nombres-comunes/**",
+            "/api/especies/*/partes-comestibles",
+            "/api/especies/*/partes-comestibles/**",
+            "/api/especies/*/videos",
+            "/api/especies/*/videos/**"
     };
 
     /** Rutas abiertas sin importar el verbo. */
@@ -185,6 +246,11 @@ public class SecurityConfig {
                         // escritura de esas mismas rutas caen en el
                         // anyRequest() de abajo.
                         .requestMatchers(HttpMethod.GET, CATALOGO_PUBLICO).permitAll()
+                        // Especie aparte: solo sus consultas publicas. GET
+                        // /api/especies y GET /api/especies/{id} no estan en
+                        // esta lista a proposito, caen en el anyRequest() y
+                        // ademas exigen ESPECIE_CONSULTAR por @PreAuthorize.
+                        .requestMatchers(HttpMethod.GET, ESPECIE_PUBLICA).permitAll()
                         .anyRequest().authenticated())
 
                 .oauth2ResourceServer(servidor -> servidor
