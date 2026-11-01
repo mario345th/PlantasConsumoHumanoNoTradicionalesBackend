@@ -1,6 +1,7 @@
 package sv.edu.ues.fmp.flora.service.impl;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,6 +22,7 @@ import sv.edu.ues.fmp.flora.exception.RecursoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.UsuarioMapper;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
+import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin;
 import sv.edu.ues.fmp.flora.service.UsuarioService;
 import sv.edu.ues.fmp.flora.util.Paginacion;
 
@@ -31,6 +33,14 @@ public class UsuarioServiceImpl implements UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final UsuarioMapper usuarioMapper;
     private final PasswordEncoder passwordEncoder;
+
+    /**
+     * El freno a la fuerza bruta se aplica aqui, en el metodo compartido, y no
+     * en cada controlador: asi cubre de una vez {@code POST /api/auth/login} y
+     * el viejo {@code POST /api/usuarios/login}, que los dos pasan por
+     * {@link #iniciarSesion(UsuarioLoginRequest)}.
+     */
+    private final ControlDeIntentosDeLogin controlDeIntentosDeLogin;
 
     @Override
     @Transactional(readOnly = true)
@@ -128,15 +138,32 @@ public class UsuarioServiceImpl implements UsuarioService {
     @Override
     @Transactional
     public UsuarioResponse iniciarSesion(UsuarioLoginRequest request) {
-        Usuario usuario = usuarioRepository
-                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(request.usuario(), request.usuario())
-                .filter(Usuario::getActivo)
-                .orElseThrow(() -> new CredencialesInvalidasException("Usuario o clave incorrectos"));
+        // Lo primero, antes de tocar la base: durante el enfriamiento la
+        // respuesta tiene que ser la misma con la clave correcta y con una
+        // equivocada, o el bloqueo seguiria sirviendo para probar claves.
+        controlDeIntentosDeLogin.verificarQuePuedeIntentar(request.usuario());
 
-        if (!passwordEncoder.matches(request.clave(), usuario.getClaveHash())) {
+        Optional<Usuario> encontrado = usuarioRepository
+                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(request.usuario(), request.usuario())
+                .filter(Usuario::getActivo);
+
+        // Las tres causas de fallo --no existe, esta desactivado, la clave no
+        // coincide-- se tratan juntas para que sigan siendo indistinguibles
+        // desde fuera y para que las tres cuenten igual contra el limite.
+        if (encontrado.isEmpty()
+                || !passwordEncoder.matches(request.clave(), encontrado.get().getClaveHash())) {
+
+            // El contador vive en memoria, no en la transaccion: el rollback
+            // que se lleva esta excepcion no lo deshace, que es justo lo que
+            // hace falta para que el fallo quede contado.
+            controlDeIntentosDeLogin.registrarFallo(request.usuario());
+
             throw new CredencialesInvalidasException("Usuario o clave incorrectos");
         }
 
+        controlDeIntentosDeLogin.registrarExito(request.usuario());
+
+        Usuario usuario = encontrado.get();
         usuario.setUltimoAcceso(LocalDateTime.now());
         Usuario actualizado = usuarioRepository.saveAndFlush(usuario);
 

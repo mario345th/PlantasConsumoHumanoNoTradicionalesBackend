@@ -1,0 +1,269 @@
+package sv.edu.ues.fmp.flora.config;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
+import java.util.Optional;
+
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+import sv.edu.ues.fmp.flora.entity.Usuario;
+import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
+import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin;
+import sv.edu.ues.fmp.flora.service.EmailService;
+
+/**
+ * Pruebas del freno a la fuerza bruta vistas desde HTTP, y de que el login
+ * viejo siga funcionando aunque este deprecado.
+ *
+ * <h2>Cada prueba arranca con el contador limpio</h2>
+ * El freno es un singleton con un mapa en memoria que vive mientras viva el
+ * contexto de Spring, asi que lo que una prueba acumula lo verian las
+ * siguientes: sin limpiar, dejar bloqueado a {@code admin.demo} en una prueba
+ * haria fallar con 429 a la de al lado, y el resultado dependeria del orden en
+ * que JUnit decidiera ejecutarlas. El {@code @BeforeEach} borra los
+ * identificadores que usa la clase con {@code registrarExito}, que es la
+ * operacion publica que reinicia el contador.
+ *
+ * <h2>Las que necesitan una clave correcta se saltan si no hay usuario</h2>
+ * Comprobar que el bloqueo responde 429 incluso con la clave buena, y que un
+ * exito reinicia el contador, pide un usuario con clave conocida. La
+ * migracion {@code V9} siembra {@code admin.demo} con la clave
+ * {@code Demo2026#}, pero la prueba no lo da por hecho: lo busca, verifica el
+ * hash con el mismo {@code PasswordEncoder} de la aplicacion y se salta si no
+ * cuadra, igual que {@link AutenticacionJwtTest} con los usuarios.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+// Los logins que si aciertan escriben ultimo_acceso; el rollback deja la base
+// como estaba.
+@Transactional
+class FrenoDeLoginTest {
+
+    private static final String LOGIN_NUEVO = "/api/auth/login";
+    private static final String LOGIN_VIEJO = "/api/usuarios/login";
+
+    /** El default de app.login.max-intentos, que no se declara en properties. */
+    private static final int MAX_INTENTOS = 5;
+
+    private static final String USUARIO_SEMBRADO = "admin.demo";
+    private static final String CLAVE_SEMBRADA = "Demo2026#";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private ControlDeIntentosDeLogin controlDeIntentosDeLogin;
+
+    @MockitoBean
+    private EmailService emailService;
+
+    /** Identificadores que usa la clase, para dejarlos limpios antes de cada prueba. */
+    private static final List<String> IDENTIFICADORES = List.of(
+            "no.existe.freno.auth",
+            "no.existe.freno.viejo",
+            "no.existe.freno.compartido",
+            "no.existe.freno.aislado",
+            "no.existe.freno.vecino",
+            USUARIO_SEMBRADO);
+
+    @BeforeEach
+    void limpiarContadores() {
+        IDENTIFICADORES.forEach(controlDeIntentosDeLogin::registrarExito);
+        usuarioConClaveConocida()
+                .ifPresent(usuario -> controlDeIntentosDeLogin.registrarExito(usuario.getCorreo()));
+    }
+
+    private static String cuerpo(String usuario, String clave) {
+        return "{\"usuario\":\"" + usuario + "\",\"clave\":\"" + clave + "\"}";
+    }
+
+    private int intentar(String ruta, String usuario, String clave) throws Exception {
+        return mockMvc.perform(post(ruta)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(usuario, clave)))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    /** Agota el limite con claves equivocadas; cada intento tiene que dar 401. */
+    private void agotarIntentos(String ruta, String usuario) throws Exception {
+        for (int i = 1; i <= MAX_INTENTOS; i++) {
+            int estado = intentar(ruta, usuario, "ClaveEquivocada" + i + "#");
+            org.junit.jupiter.api.Assertions.assertEquals(401, estado,
+                    "el intento " + i + " deberia ser 401, no " + estado);
+        }
+    }
+
+    /** Devuelve el usuario sembrado si existe y su clave es la esperada. */
+    private Optional<Usuario> usuarioConClaveConocida() {
+        return usuarioRepository
+                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(USUARIO_SEMBRADO, USUARIO_SEMBRADO)
+                .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
+                .filter(usuario -> passwordEncoder.matches(CLAVE_SEMBRADA, usuario.getClaveHash()));
+    }
+
+    // ---------- El bloqueo ----------
+
+    @Test
+    void loginNuevo_trasAgotarLosIntentos_devuelve429ConElFormatoDeErrorDelProyecto() throws Exception {
+        String usuario = "no.existe.freno.auth";
+        agotarIntentos(LOGIN_NUEVO, usuario);
+
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(usuario, "OtraMas1#")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.estado").value(429))
+                .andExpect(jsonPath("$.error").value("Demasiadas peticiones"))
+                .andExpect(jsonPath("$.ruta").value(LOGIN_NUEVO))
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.mensaje").exists())
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    void loginViejo_trasAgotarLosIntentos_tambienDevuelve429() throws Exception {
+        String usuario = "no.existe.freno.viejo";
+        agotarIntentos(LOGIN_VIEJO, usuario);
+
+        mockMvc.perform(post(LOGIN_VIEJO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(usuario, "OtraMas1#")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.ruta").value(LOGIN_VIEJO));
+    }
+
+    /**
+     * La razon de aplicar el freno en {@code UsuarioService.iniciarSesion} y no
+     * en cada controlador: los intentos de los dos endpoints suman al mismo
+     * contador, asi que no se puede esquivar el limite alternando entre ellos.
+     */
+    @Test
+    void losDosLoginsCompartenElContador() throws Exception {
+        String usuario = "no.existe.freno.compartido";
+
+        for (int i = 0; i < 3; i++) {
+            org.junit.jupiter.api.Assertions.assertEquals(401,
+                    intentar(LOGIN_NUEVO, usuario, "Equivocada" + i + "#"));
+        }
+        for (int i = 0; i < 2; i++) {
+            org.junit.jupiter.api.Assertions.assertEquals(401,
+                    intentar(LOGIN_VIEJO, usuario, "Equivocada" + i + "#"));
+        }
+
+        // Cinco fallos repartidos entre los dos endpoints bastan: el siguiente
+        // intento, por cualquiera de los dos, ya esta bloqueado.
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(usuario, "Equivocada9#")))
+                .andExpect(status().isTooManyRequests());
+
+        mockMvc.perform(post(LOGIN_VIEJO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(usuario, "Equivocada9#")))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void elBloqueoDeUnUsuarioNoAfectaALosDemas() throws Exception {
+        agotarIntentos(LOGIN_NUEVO, "no.existe.freno.aislado");
+
+        // Otro identificador sigue recibiendo el 401 de siempre, no un 429.
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo("no.existe.freno.vecino", "LaQueSea1#")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.mensaje").value("Usuario o clave incorrectos"));
+    }
+
+    /**
+     * Lo que hace util al bloqueo: mientras dura, ni la clave correcta entra.
+     * Si respondiera 200, el enfriamiento solo estorbaria al que se equivoca y
+     * no frenaria al que acierta probando.
+     */
+    @Test
+    void duranteElBloqueo_laClaveCorrectaTambienRecibe429() throws Exception {
+        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
+                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
+
+        agotarIntentos(LOGIN_NUEVO, USUARIO_SEMBRADO);
+
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    /**
+     * Quien se equivoco unas cuantas veces y luego acerto no arrastra nada: el
+     * contador vuelve a cero y le queda el limite completo.
+     */
+    @Test
+    void unExitoAntesDelLimite_reiniciaElContador() throws Exception {
+        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
+                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
+
+        String correo = usuarioConClaveConocida().get().getCorreo();
+
+        for (int i = 0; i < MAX_INTENTOS - 1; i++) {
+            org.junit.jupiter.api.Assertions.assertEquals(401,
+                    intentar(LOGIN_NUEVO, correo, "Equivocada" + i + "#"));
+        }
+
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(correo, CLAVE_SEMBRADA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").exists());
+
+        // Con el contador reiniciado vuelve a tener los cinco intentos, asi que
+        // estos cuatro fallos no bloquean.
+        for (int i = 0; i < MAX_INTENTOS - 1; i++) {
+            org.junit.jupiter.api.Assertions.assertEquals(401,
+                    intentar(LOGIN_NUEVO, correo, "OtraEquivocada" + i + "#"));
+        }
+    }
+
+    // ---------- El login viejo sigue vivo ----------
+
+    /**
+     * Deprecado no es roto: mientras el frontend migre tiene que seguir
+     * devolviendo el usuario, sin token, exactamente como antes.
+     */
+    @Test
+    void loginViejo_deprecadoPeroNoRoto() throws Exception {
+        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
+                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
+
+        mockMvc.perform(post(LOGIN_VIEJO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nombreUsuario").value(USUARIO_SEMBRADO))
+                // Sigue sin emitir token: es lo que lo hace insuficiente y la
+                // razon de que haya que retirarlo.
+                .andExpect(jsonPath("$.token").doesNotExist())
+                // Y sigue sin devolver el hash de la clave.
+                .andExpect(jsonPath("$.claveHash").doesNotExist());
+    }
+}

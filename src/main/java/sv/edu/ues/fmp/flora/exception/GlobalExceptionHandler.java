@@ -144,6 +144,37 @@ public class GlobalExceptionHandler {
     /**
      * Login fallido -> 401 UNAUTHORIZED.
      */
+    /**
+     * Demasiados intentos de login fallidos -> 429 TOO MANY REQUESTS.
+     * <p>
+     * Es el codigo que corresponde: la peticion esta bien formada y las
+     * credenciales podrian incluso ser correctas, lo que sobra es la
+     * frecuencia. Un 401 diria "esas credenciales no sirven", que durante el
+     * enfriamiento seria mentira y ademas dejaria al cliente reintentando.
+     * <p>
+     * El mensaje si dice cuantos minutos quedan. No es una fuga: quien recibe
+     * este 429 ya sabe que disparo el bloqueo, y sin el dato la unica forma de
+     * averiguar cuando volver es seguir probando, que es lo contrario de lo
+     * que se busca.
+     */
+    @ExceptionHandler(DemasiadosIntentosException.class)
+    public ResponseEntity<ErrorResponse> manejarDemasiadosIntentos(
+            DemasiadosIntentosException ex,
+            HttpServletRequest request) {
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.TOO_MANY_REQUESTS.value())
+                .error("Demasiadas peticiones")
+                .mensaje(ex.getMessage())
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(cuerpo);
+    }
+
     @ExceptionHandler(CredencialesInvalidasException.class)
     public ResponseEntity<ErrorResponse> manejarCredencialesInvalidas(
             CredencialesInvalidasException ex,

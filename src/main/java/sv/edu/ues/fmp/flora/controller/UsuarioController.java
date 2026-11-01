@@ -1,5 +1,7 @@
 package sv.edu.ues.fmp.flora.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +36,8 @@ import sv.edu.ues.fmp.flora.service.UsuarioService;
 @RequestMapping("/api/usuarios")
 @RequiredArgsConstructor
 public class UsuarioController {
+
+    private static final Logger log = LoggerFactory.getLogger(UsuarioController.class);
 
     private final UsuarioService usuarioService;
 
@@ -171,8 +175,32 @@ public class UsuarioController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Iniciar sesión",
-            description = "El campo usuario acepta indistintamente el correo o el nombre de "
+    /**
+     * Login sin token, el que existia antes de JWT.
+     * <p>
+     * <strong>Reemplazado por {@code POST /api/auth/login}; retirar cuando el
+     * frontend migre.</strong> La fecha de retiro se coordina con el equipo de
+     * frontend: este metodo no la decide.
+     * <p>
+     * Valida las credenciales igual que el nuevo --los dos pasan por
+     * {@code UsuarioService.iniciarSesion}, asi que comparten el BCrypt, la
+     * actualizacion de {@code ultimo_acceso} y el freno a la fuerza bruta--
+     * pero devuelve solo el usuario, sin token, asi que quien se autentique por
+     * aqui no puede llamar a ningun endpoint protegido. Sigue publico para no
+     * romper al frontend mientras migra.
+     * <p>
+     * Cada uso deja un WARN en el log: es la unica forma de saber si alguien
+     * lo sigue llamando y, cuando los WARN desaparezcan, de poder retirarlo con
+     * tranquilidad.
+     */
+    @Deprecated(since = "JWT", forRemoval = true)
+    @Operation(summary = "Iniciar sesión (obsoleto)",
+            deprecated = true,
+            description = "OBSOLETO: use POST /api/auth/login, que devuelve un token. Este "
+                    + "endpoint valida las credenciales igual pero no emite token, así que no "
+                    + "sirve para llamar a endpoints protegidos. Se mantiene solo mientras el "
+                    + "frontend migra y se retirará cuando termine. "
+                    + "El campo usuario acepta indistintamente el correo o el nombre de "
                     + "usuario. Si la cuenta existe, está activa y la clave coincide, "
                     + "actualiza ultimo_acceso y devuelve el usuario. El mensaje de error es "
                     + "siempre el mismo para no revelar cuál de las tres cosas falló.")
@@ -180,8 +208,16 @@ public class UsuarioController {
     @ApiResponse(responseCode = "400", description = "El cuerpo de la petición no es válido")
     @ApiResponse(responseCode = "401",
             description = "Usuario o clave incorrectos, o la cuenta está desactivada")
+    @ApiResponse(responseCode = "429",
+            description = "Demasiados intentos fallidos; la cuenta está en enfriamiento")
     @PostMapping("/login")
     public ResponseEntity<UsuarioResponse> iniciarSesion(@Valid @RequestBody UsuarioLoginRequest request) {
+        // Sin el usuario ni la clave: lo que interesa es si todavia hay quien
+        // llame a este endpoint, no quien. El identificador acabaria en el log
+        // de la aplicacion sin necesidad.
+        log.warn("Se llamo al login obsoleto POST /api/usuarios/login; "
+                + "el frontend deberia usar POST /api/auth/login");
+
         return ResponseEntity.ok(usuarioService.iniciarSesion(request));
     }
 }
