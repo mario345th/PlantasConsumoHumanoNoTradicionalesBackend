@@ -18,6 +18,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.NombreComunRepository;
 import sv.edu.ues.fmp.flora.service.NombreComunService;
 import sv.edu.ues.fmp.flora.util.Textos;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /**
  * Implementacion de la logica de negocio de los nombres comunes.
@@ -51,6 +52,12 @@ public class NombreComunServiceImpl implements NombreComunService {
     private final EspecieRepository especieRepository;
     private final NombreComunMapper nombreComunMapper;
 
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Override
     @Transactional(readOnly = true)
     public List<NombreComunResponse> listarPorEspecie(Long idEspecie) {
@@ -70,7 +77,21 @@ public class NombreComunServiceImpl implements NombreComunService {
     @Override
     @Transactional(readOnly = true)
     public NombreComunResponse obtenerPorId(Long id) {
-        return nombreComunMapper.toResponse(buscarOFallar(id));
+        return nombreComunMapper.toResponse(buscarVisibleOFallar(id));
+    }
+
+    /**
+     * El nombre comun, pero solo si la especie a la que pertenece se puede ver.
+     * Si no, el mismo 404 que un id inexistente, para que no se distingan.
+     */
+    private NombreComun buscarVisibleOFallar(Long id) {
+        NombreComun entidad = buscarOFallar(id);
+
+        if (!visibilidadDeEspecie.puedeVer(entidad.getEspecie().getIdEspecie())) {
+            throw noEncontrado(id);
+        }
+
+        return entidad;
     }
 
     @Override
@@ -256,8 +277,12 @@ public class NombreComunServiceImpl implements NombreComunService {
 
     private NombreComun buscarOFallar(Long id) {
         return nombreComunRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe el nombre común con id " + id));
+                .orElseThrow(() -> noEncontrado(id));
+    }
+
+    /** El 404 del recurso, en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrado(Long id) {
+        return new RecursoNoEncontradoException("No existe el nombre común con id " + id);
     }
 
     private Especie buscarEspecieOFallar(Long idEspecie) {

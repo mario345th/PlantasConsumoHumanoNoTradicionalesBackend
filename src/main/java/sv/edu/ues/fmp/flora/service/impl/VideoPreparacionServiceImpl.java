@@ -16,6 +16,7 @@ import sv.edu.ues.fmp.flora.mapper.VideoPreparacionMapper;
 import sv.edu.ues.fmp.flora.repository.PreparacionConsumoRepository;
 import sv.edu.ues.fmp.flora.repository.VideoPreparacionRepository;
 import sv.edu.ues.fmp.flora.service.VideoPreparacionService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /** Implementacion del servicio para la gestion de videos de preparaciones de consumo. */
 @Service
@@ -27,10 +28,21 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
     private final PreparacionConsumoRepository preparacionConsumoRepository;
     private final VideoPreparacionMapper videoPreparacionMapper;
 
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Override
     @Transactional(readOnly = true)
     public List<VideoPreparacionResponse> listarPorPreparacion(Long idPreparacion, boolean soloActivos) {
-        verificarPreparacionExisteOFallar(idPreparacion);
+        // La preparacion de una ficha sin publicar se responde como una
+        // preparacion que no existe: el mismo 404, misma redaccion.
+        if (!puedeVerLaPreparacion(idPreparacion)) {
+            throw preparacionNoEncontrada(idPreparacion);
+        }
+
         List<VideoPreparacion> videos = soloActivos
                 ? videoPreparacionRepository.findByPreparacionIdPreparacionAndActivoTrueOrderByIdVideoPreparacionAsc(idPreparacion)
                 : videoPreparacionRepository.findByPreparacionIdPreparacionOrderByIdVideoPreparacionAsc(idPreparacion);
@@ -40,7 +52,34 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
     @Override
     @Transactional(readOnly = true)
     public VideoPreparacionResponse obtenerPorId(Long id) {
-        return videoPreparacionMapper.toResponse(buscarOFallar(id));
+        VideoPreparacion entidad = buscarOFallar(id);
+
+        // La cadena completa: video -> preparacion -> parte comestible -> especie.
+        if (!visibilidadDeEspecie.puedeVer(entidad.getPreparacion()
+                .getEspecieParteComestible().getEspecie().getIdEspecie())) {
+
+            throw noEncontrado(id);
+        }
+
+        return videoPreparacionMapper.toResponse(entidad);
+    }
+
+    /** Si la preparacion existe y la especie de la que cuelga se puede ver. */
+    private boolean puedeVerLaPreparacion(Long idPreparacion) {
+        return preparacionConsumoRepository.findById(idPreparacion)
+                .map(preparacion -> visibilidadDeEspecie.puedeVer(
+                        preparacion.getEspecieParteComestible().getEspecie().getIdEspecie()))
+                .orElse(false);
+    }
+
+    /** Los 404 del modulo, cada uno en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrado(Long id) {
+        return new RecursoNoEncontradoException("No existe el video de preparación con id " + id);
+    }
+
+    private static RecursoNoEncontradoException preparacionNoEncontrada(Long idPreparacion) {
+        return new RecursoNoEncontradoException(
+                "No existe la preparación de consumo con id " + idPreparacion);
     }
 
     @Override
@@ -84,8 +123,7 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
 
     private VideoPreparacion buscarOFallar(Long id) {
         return videoPreparacionRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe el video de preparación con id " + id));
+                .orElseThrow(() -> noEncontrado(id));
     }
 
     private PreparacionConsumo buscarPreparacionOFallar(Long idPreparacion) {
@@ -94,12 +132,9 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
                         "No existe la preparación de consumo con id " + idPreparacion));
     }
 
-    private void verificarPreparacionExisteOFallar(Long idPreparacion) {
-        if (!preparacionConsumoRepository.existsById(idPreparacion)) {
-            throw new RecursoNoEncontradoException(
-                    "No existe la preparación de consumo con id " + idPreparacion);
-        }
-    }
+    // verificarPreparacionExisteOFallar se retiro: puedeVerLaPreparacion ya
+    // trae la preparacion, y comprobar la existencia aparte era una consulta
+    // de mas que decia menos.
 
     private void verificarPreparacionActiva(PreparacionConsumo preparacion) {
         if (!Boolean.TRUE.equals(preparacion.getActiva())) {

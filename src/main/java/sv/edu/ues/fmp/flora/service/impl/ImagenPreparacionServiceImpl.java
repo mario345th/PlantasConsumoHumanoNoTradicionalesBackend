@@ -16,6 +16,7 @@ import sv.edu.ues.fmp.flora.mapper.ImagenPreparacionMapper;
 import sv.edu.ues.fmp.flora.repository.ImagenPreparacionRepository;
 import sv.edu.ues.fmp.flora.repository.PreparacionConsumoRepository;
 import sv.edu.ues.fmp.flora.service.ImagenPreparacionService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /**
  * Implementacion del servicio para la gestion de imagenes de preparaciones de consumo.
@@ -39,10 +40,21 @@ public class ImagenPreparacionServiceImpl implements ImagenPreparacionService {
     private final PreparacionConsumoRepository preparacionConsumoRepository;
     private final ImagenPreparacionMapper imagenPreparacionMapper;
 
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Override
     @Transactional(readOnly = true)
     public List<ImagenPreparacionResponse> listarPorPreparacion(Long idPreparacion, boolean soloActivas) {
-        verificarPreparacionExisteOFallar(idPreparacion);
+        // La preparacion de una ficha sin publicar se responde como una
+        // preparacion que no existe: el mismo 404, misma redaccion.
+        if (!puedeVerLaPreparacion(idPreparacion)) {
+            throw preparacionNoEncontrada(idPreparacion);
+        }
+
         List<ImagenPreparacion> imagenes = soloActivas
                 ? imagenPreparacionRepository.findByPreparacionIdPreparacionAndActivaTrueOrderByIdImagenPreparacionAsc(idPreparacion)
                 : imagenPreparacionRepository.findByPreparacionIdPreparacionOrderByIdImagenPreparacionAsc(idPreparacion);
@@ -52,7 +64,34 @@ public class ImagenPreparacionServiceImpl implements ImagenPreparacionService {
     @Override
     @Transactional(readOnly = true)
     public ImagenPreparacionResponse obtenerPorId(Long id) {
-        return imagenPreparacionMapper.toResponse(buscarOFallar(id));
+        ImagenPreparacion entidad = buscarOFallar(id);
+
+        // La cadena completa: imagen -> preparacion -> parte comestible -> especie.
+        if (!visibilidadDeEspecie.puedeVer(entidad.getPreparacion()
+                .getEspecieParteComestible().getEspecie().getIdEspecie())) {
+
+            throw noEncontrada(id);
+        }
+
+        return imagenPreparacionMapper.toResponse(entidad);
+    }
+
+    /** Si la preparacion existe y la especie de la que cuelga se puede ver. */
+    private boolean puedeVerLaPreparacion(Long idPreparacion) {
+        return preparacionConsumoRepository.findById(idPreparacion)
+                .map(preparacion -> visibilidadDeEspecie.puedeVer(
+                        preparacion.getEspecieParteComestible().getEspecie().getIdEspecie()))
+                .orElse(false);
+    }
+
+    /** Los 404 del modulo, cada uno en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la imagen de preparación con id " + id);
+    }
+
+    private static RecursoNoEncontradoException preparacionNoEncontrada(Long idPreparacion) {
+        return new RecursoNoEncontradoException(
+                "No existe la preparación de consumo con id " + idPreparacion);
     }
 
     @Override
@@ -140,22 +179,17 @@ public class ImagenPreparacionServiceImpl implements ImagenPreparacionService {
 
     private ImagenPreparacion buscarOFallar(Long id) {
         return imagenPreparacionRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe la imagen de preparación con id " + id));
+                .orElseThrow(() -> noEncontrada(id));
     }
 
     private PreparacionConsumo buscarPreparacionOFallar(Long idPreparacion) {
         return preparacionConsumoRepository.findById(idPreparacion)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe la preparación de consumo con id " + idPreparacion));
+                .orElseThrow(() -> preparacionNoEncontrada(idPreparacion));
     }
 
-    private void verificarPreparacionExisteOFallar(Long idPreparacion) {
-        if (!preparacionConsumoRepository.existsById(idPreparacion)) {
-            throw new RecursoNoEncontradoException(
-                    "No existe la preparación de consumo con id " + idPreparacion);
-        }
-    }
+    // verificarPreparacionExisteOFallar se retiro: puedeVerLaPreparacion ya
+    // trae la preparacion, y comprobar la existencia aparte era una consulta
+    // de mas que decia menos.
 
     private void verificarPreparacionActiva(PreparacionConsumo preparacion) {
         if (!Boolean.TRUE.equals(preparacion.getActiva())) {

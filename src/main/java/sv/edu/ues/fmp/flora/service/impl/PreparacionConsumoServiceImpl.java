@@ -14,6 +14,7 @@ import sv.edu.ues.fmp.flora.mapper.PreparacionConsumoMapper;
 import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.repository.PreparacionConsumoRepository;
 import sv.edu.ues.fmp.flora.service.PreparacionConsumoService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +22,12 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
     private final PreparacionConsumoRepository repository;
     private final EspecieParteComestibleRepository parteRepository;
     private final PreparacionConsumoMapper mapper;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     @Override
     @Transactional(readOnly = true)
@@ -34,7 +41,14 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
     @Override
     @Transactional(readOnly = true)
     public List<PreparacionConsumoResponse> listarPorParte(Long idParte, boolean soloActivas) {
-        buscarParte(idParte);
+        EspecieParteComestible parte = buscarParte(idParte);
+
+        // La parte de una ficha sin publicar se responde como una parte que no
+        // existe: el mismo 404 que acaba de lanzar buscarParte.
+        if (!visibilidadDeEspecie.puedeVer(parte.getEspecie().getIdEspecie())) {
+            throw parteNoEncontrada(idParte);
+        }
+
         List<PreparacionConsumo> registros = soloActivas
                 ? repository.findByEspecieParteComestibleIdEspecieParteAndActivaTrueOrderByOrdenPresentacionAscIdPreparacionAsc(idParte)
                 : repository.findByEspecieParteComestibleIdEspecieParteOrderByOrdenPresentacionAscIdPreparacionAsc(idParte);
@@ -44,7 +58,24 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
     @Override
     @Transactional(readOnly = true)
     public PreparacionConsumoResponse obtenerPorId(Long id) {
-        return mapper.toResponse(buscarOFallar(id));
+        PreparacionConsumo entidad = buscarOFallar(id);
+
+        if (!visibilidadDeEspecie.puedeVer(
+                entidad.getEspecieParteComestible().getEspecie().getIdEspecie())) {
+
+            throw noEncontrada(id);
+        }
+
+        return mapper.toResponse(entidad);
+    }
+
+    /** Los 404 del modulo, cada uno en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la preparación con id " + id);
+    }
+
+    private static RecursoNoEncontradoException parteNoEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la parte comestible con id " + id);
     }
 
     @Override
@@ -86,14 +117,12 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
 
     private PreparacionConsumo buscarOFallar(Long id) {
         validarId(id, "preparación");
-        return repository.findById(id).orElseThrow(() ->
-                new RecursoNoEncontradoException("No existe la preparación con id " + id));
+        return repository.findById(id).orElseThrow(() -> noEncontrada(id));
     }
 
     private EspecieParteComestible buscarParte(Long id) {
         validarId(id, "parte comestible");
-        return parteRepository.findById(id).orElseThrow(() ->
-                new RecursoNoEncontradoException("No existe la parte comestible con id " + id));
+        return parteRepository.findById(id).orElseThrow(() -> parteNoEncontrada(id));
     }
 
     private void verificarParteActiva(EspecieParteComestible parte) {

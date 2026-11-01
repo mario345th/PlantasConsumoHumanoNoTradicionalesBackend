@@ -19,6 +19,7 @@ import sv.edu.ues.fmp.flora.mapper.EpocaCosechaMapper;
 import sv.edu.ues.fmp.flora.repository.EpocaCosechaRepository;
 import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.service.EpocaCosechaService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,12 @@ public class EpocaCosechaServiceImpl implements EpocaCosechaService {
     private final EpocaCosechaRepository epocaCosechaRepository;
     private final EspecieParteComestibleRepository parteComestibleRepository;
     private final EpocaCosechaMapper epocaCosechaMapper;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     @Override
     @Transactional(readOnly = true)
@@ -54,7 +61,22 @@ public class EpocaCosechaServiceImpl implements EpocaCosechaService {
     @Override
     @Transactional(readOnly = true)
     public EpocaCosechaResponse obtenerPorId(Long id) {
-        return epocaCosechaMapper.toResponse(buscarEpocaOFallar(id));
+        EpocaCosecha entidad = buscarEpocaOFallar(id);
+
+        // La epoca cuelga de una parte comestible, que cuelga de la especie: si
+        // esa ficha no se puede ver, esto se responde como lo que no existe.
+        if (!visibilidadDeEspecie.puedeVer(
+                entidad.getEspecieParteComestible().getEspecie().getIdEspecie())) {
+
+            throw noEncontrada(id);
+        }
+
+        return epocaCosechaMapper.toResponse(entidad);
+    }
+
+    /** El 404 del recurso, en un solo sitio para que las dos salidas coincidan. */
+    private static RecursoNoEncontradoException noEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la época de cosecha con id " + id);
     }
 
     @Override
@@ -163,9 +185,7 @@ public class EpocaCosechaServiceImpl implements EpocaCosechaService {
         validarId(id);
 
         return epocaCosechaRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe la época de cosecha con id " + id
-                ));
+                .orElseThrow(() -> noEncontrada(id));
     }
 
     private void validarId(Long id) {

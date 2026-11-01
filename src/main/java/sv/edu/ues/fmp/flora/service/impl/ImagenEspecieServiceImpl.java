@@ -13,6 +13,7 @@ import sv.edu.ues.fmp.flora.mapper.ImagenEspecieMapper;
 import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.ImagenEspecieRepository;
 import sv.edu.ues.fmp.flora.service.ImagenEspecieService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /** Gestiona imágenes, valida sus relaciones y coordina el índice parcial de principal activa. */
 @Service
@@ -23,6 +24,12 @@ public class ImagenEspecieServiceImpl implements ImagenEspecieService {
     private final EspecieRepository especieRepository;
     private final ValidadorParteEspecie validadorParteEspecie;
     private final ImagenEspecieMapper imagenEspecieMapper;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     /** Distingue especie inexistente de un listado vacío; permite consultar el historial. */
     @Override
@@ -41,7 +48,25 @@ public class ImagenEspecieServiceImpl implements ImagenEspecieService {
     @Override
     @Transactional(readOnly = true)
     public ImagenEspecieResponse obtenerPorId(Long id) {
-        return imagenEspecieMapper.toResponse(buscarOFallar(id));
+        return imagenEspecieMapper.toResponse(buscarVisibleOFallar(id));
+    }
+
+    /**
+     * La imagen, pero solo si la especie a la que pertenece se puede ver.
+     * <p>
+     * Cuando no, lanza el <strong>mismo</strong> 404 que {@link #buscarOFallar}
+     * da para un id que no existe: los dos salen de {@link #noEncontrada} para
+     * que sean identicos y la imagen de un borrador no se pueda distinguir de
+     * una que no existe. Un 403 aqui confirmaria que ese id esta ocupado.
+     */
+    private ImagenEspecie buscarVisibleOFallar(Long id) {
+        ImagenEspecie entidad = buscarOFallar(id);
+
+        if (!visibilidadDeEspecie.puedeVer(entidad.getEspecie().getIdEspecie())) {
+            throw noEncontrada(id);
+        }
+
+        return entidad;
     }
 
     /** Valida especie y parte antes de desplazar a la principal e insertar. */
@@ -131,7 +156,12 @@ public class ImagenEspecieServiceImpl implements ImagenEspecieService {
     /** Resuelve el registro o devuelve el 404 de negocio. */
     private ImagenEspecie buscarOFallar(Long id) {
         return imagenEspecieRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException("No existe la imagen con id " + id));
+                .orElseThrow(() -> noEncontrada(id));
+    }
+
+    /** El 404 del recurso, en un solo sitio para que no se separe de si mismo. */
+    private static RecursoNoEncontradoException noEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la imagen con id " + id);
     }
 
     /** Las nuevas asociaciones y modificaciones requieren una especie activa. */

@@ -24,6 +24,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.repository.FuenteRepository;
 import sv.edu.ues.fmp.flora.repository.ParteBeneficioRepository;
 import sv.edu.ues.fmp.flora.service.ParteBeneficioService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,12 @@ public class ParteBeneficioServiceImpl implements ParteBeneficioService {
     private final EspecieParteComestibleRepository especieParteComestibleRepository;
     private final FuenteRepository fuenteRepository;
     private final ParteBeneficioMapper parteBeneficioMapper;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     @Override
     @Transactional(readOnly = true)
@@ -63,6 +70,15 @@ public class ParteBeneficioServiceImpl implements ParteBeneficioService {
                 idEspecieParte,
                 idBeneficio
         );
+
+        // La asociacion cuelga de la parte comestible, que cuelga de la
+        // especie: si esa ficha no se puede ver, se responde como la
+        // asociacion que no existe, con el mismo texto.
+        if (!visibilidadDeEspecie.puedeVer(
+                entidad.getEspecieParteComestible().getEspecie().getIdEspecie())) {
+
+            throw noEncontrada(idEspecieParte, idBeneficio);
+        }
 
         return parteBeneficioMapper.toResponse(entidad);
     }
@@ -236,12 +252,20 @@ public class ParteBeneficioServiceImpl implements ParteBeneficioService {
         );
 
         return parteBeneficioRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe la asociación entre la parte comestible "
-                                + idEspecieParte
-                                + " y el beneficio "
-                                + idBeneficio
-                ));
+                .orElseThrow(() -> noEncontrada(idEspecieParte, idBeneficio));
+    }
+
+    /** El 404 del recurso, en un solo sitio para que las dos salidas coincidan. */
+    private static RecursoNoEncontradoException noEncontrada(
+            Long idEspecieParte,
+            Long idBeneficio
+    ) {
+        return new RecursoNoEncontradoException(
+                "No existe la asociación entre la parte comestible "
+                        + idEspecieParte
+                        + " y el beneficio "
+                        + idBeneficio
+        );
     }
 
     private ParteBeneficioId validarClave(

@@ -15,6 +15,7 @@ import sv.edu.ues.fmp.flora.repository.DistritoRepository;
 import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.UbicacionEspecieRepository;
 import sv.edu.ues.fmp.flora.service.UbicacionEspecieService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 import java.util.List;
 
@@ -25,6 +26,12 @@ public class UbicacionEspecieServiceImpl implements UbicacionEspecieService {
     private final UbicacionEspecieRepository ubicacionEspecieRepository;
     private final EspecieRepository especieRepository;
     private final DistritoRepository distritoRepository;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     @Override
     @Transactional
@@ -61,7 +68,14 @@ public class UbicacionEspecieServiceImpl implements UbicacionEspecieService {
     @Override
     @Transactional(readOnly = true)
     public List<UbicacionEspecieResponse> obtenerUbicacionesPorEspecie(Long idEspecie) {
-        if (!especieRepository.existsById(idEspecie)) {
+        // Sustituye al existsById de antes: ademas de que exista, exige que la
+        // ficha se pueda ver. Un borrador responde el mismo 404 que un id que
+        // no existe, y aqui los dos textos ya coincidian.
+        //
+        // Las ubicaciones son el caso en que mas pesa: son coordenadas de donde
+        // crece una especie, y las de una ficha sin publicar no tienen por que
+        // estar al alcance de cualquiera.
+        if (!visibilidadDeEspecie.puedeVer(idEspecie)) {
             throw new RecursoNoEncontradoException("No existe una especie con id " + idEspecie);
         }
 

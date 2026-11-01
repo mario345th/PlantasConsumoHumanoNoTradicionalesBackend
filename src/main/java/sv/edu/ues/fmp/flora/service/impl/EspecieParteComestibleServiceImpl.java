@@ -20,6 +20,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.PartePlantaRepository;
 import sv.edu.ues.fmp.flora.service.EspecieParteComestibleService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /**
  * Implementacion de la logica de negocio de las partes comestibles.
@@ -49,6 +50,12 @@ public class EspecieParteComestibleServiceImpl implements EspecieParteComestible
     private final PartePlantaRepository partePlantaRepository;
     private final EspecieParteComestibleMapper especieParteComestibleMapper;
 
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Override
     @Transactional(readOnly = true)
     public List<EspecieParteComestibleResponse> listarPorEspecie(Long idEspecie, boolean soloActivas) {
@@ -68,7 +75,21 @@ public class EspecieParteComestibleServiceImpl implements EspecieParteComestible
     @Override
     @Transactional(readOnly = true)
     public EspecieParteComestibleResponse obtenerPorId(Long id) {
-        return especieParteComestibleMapper.toResponse(buscarOFallar(id));
+        return especieParteComestibleMapper.toResponse(buscarVisibleOFallar(id));
+    }
+
+    /**
+     * La parte comestible, pero solo si la especie a la que pertenece se puede
+     * ver. Si no, el mismo 404 que un id inexistente, para que no se distingan.
+     */
+    private EspecieParteComestible buscarVisibleOFallar(Long id) {
+        EspecieParteComestible entidad = buscarOFallar(id);
+
+        if (!visibilidadDeEspecie.puedeVer(entidad.getEspecie().getIdEspecie())) {
+            throw noEncontrada(id);
+        }
+
+        return entidad;
     }
 
     @Override
@@ -155,7 +176,11 @@ public class EspecieParteComestibleServiceImpl implements EspecieParteComestible
 
     private EspecieParteComestible buscarOFallar(Long id) {
         return especieParteComestibleRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe la parte comestible con id " + id));
+                .orElseThrow(() -> noEncontrada(id));
+    }
+
+    /** El 404 del recurso, en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrada(Long id) {
+        return new RecursoNoEncontradoException("No existe la parte comestible con id " + id);
     }
 }

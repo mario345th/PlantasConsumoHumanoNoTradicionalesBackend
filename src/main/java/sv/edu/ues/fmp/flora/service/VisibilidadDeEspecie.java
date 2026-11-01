@@ -69,14 +69,41 @@ public class VisibilidadDeEspecie {
      *                                      trae {@code ESPECIE_CONSULTAR}
      */
     public void verificarQuePuedeVer(Long idEspecie) {
-        Especie especie = especieRepository.findById(idEspecie)
-                .orElseThrow(() -> noEncontrada(idEspecie));
+        if (!puedeVer(idEspecie)) {
+            throw noEncontrada(idEspecie);
+        }
+    }
 
-        if (estaPublicada(especie) || puedeConsultarFichasInternas()) {
-            return;
+    /**
+     * El mismo criterio, pero respondiendo en vez de lanzar.
+     *
+     * <h2>Para que hace falta la version que no lanza</h2>
+     * La lanza sirve cuando la ruta lleva el id de la especie y el 404 que
+     * corresponde es el de la especie. Pero hay rutas planas que llevan el id
+     * del <em>hijo</em> --{@code /api/imagenes-especie/{id}},
+     * {@code /api/preparaciones-consumo/{id}}...-- y ahi el 404 tiene que ser
+     * el del hijo, no el de la especie: si un hijo de un borrador contestara
+     * "no existe una especie con id 3" y un id de hijo inventado contestara "no
+     * existe la imagen con id 999", la diferencia bastaria para saber que la
+     * imagen 5 existe y pertenece a una ficha sin publicar. Justo el oraculo
+     * que se quiere cerrar.
+     * <p>
+     * Por eso cada servicio pregunta con este metodo y, si la respuesta es no,
+     * lanza <strong>su propio</strong> "no encontrado", el mismo que ya usaba
+     * para un id que no existe. Asi las dos respuestas son identicas sin que
+     * nadie tenga que copiar el texto del otro.
+     * <p>
+     * Un id de especie que no existe tambien devuelve {@code false}: para quien
+     * pregunta, no existir y no poder verse son lo mismo.
+     */
+    public boolean puedeVer(Long idEspecie) {
+        if (idEspecie == null) {
+            return false;
         }
 
-        throw noEncontrada(idEspecie);
+        return especieRepository.findById(idEspecie)
+                .map(especie -> estaPublicada(especie) || puedeConsultarFichasInternas())
+                .orElse(false);
     }
 
     /**

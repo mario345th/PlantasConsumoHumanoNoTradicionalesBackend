@@ -18,6 +18,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.repository.VideoEspecieRepository;
 import sv.edu.ues.fmp.flora.service.VideoEspecieService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,12 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
     private final EspecieRepository especieRepository;
     private final EspecieParteComestibleRepository especieParteComestibleRepository;
     private final VideoEspecieMapper videoEspecieMapper;
+
+    /**
+     * Decide si el contenido de la especie padre se puede mostrar a quien
+     * llama. Lo que no se puede ver se responde como lo que no existe.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     @Override
     @Transactional(readOnly = true)
@@ -43,7 +50,21 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
     @Override
     @Transactional(readOnly = true)
     public VideoEspecieResponse obtenerPorId(Long id) {
-        return videoEspecieMapper.toResponse(buscarOFallar(id));
+        return videoEspecieMapper.toResponse(buscarVisibleOFallar(id));
+    }
+
+    /**
+     * El video, pero solo si la especie a la que pertenece se puede ver. Si no,
+     * el mismo 404 que un id inexistente, para que no se distingan.
+     */
+    private VideoEspecie buscarVisibleOFallar(Long id) {
+        VideoEspecie entidad = buscarOFallar(id);
+
+        if (!visibilidadDeEspecie.puedeVer(entidad.getEspecie().getIdEspecie())) {
+            throw noEncontrado(id);
+        }
+
+        return entidad;
     }
 
     @Override
@@ -111,6 +132,11 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
 
     private VideoEspecie buscarOFallar(Long id) {
         return videoEspecieRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException("No existe el video con id " + id));
+                .orElseThrow(() -> noEncontrado(id));
+    }
+
+    /** El 404 del recurso, en un solo sitio. */
+    private static RecursoNoEncontradoException noEncontrado(Long id) {
+        return new RecursoNoEncontradoException("No existe el video con id " + id);
     }
 }
