@@ -28,6 +28,7 @@ import sv.edu.ues.fmp.flora.repository.TaxonomiaRepository;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
 import sv.edu.ues.fmp.flora.service.EspecieService;
 import sv.edu.ues.fmp.flora.service.NombreComunService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 import sv.edu.ues.fmp.flora.util.Textos;
 
 /**
@@ -88,10 +89,13 @@ public class EspecieServiceImpl implements EspecieService {
         // El filtro va en la consulta y no sobre la entidad ya cargada para no
         // dar lugar a un 200 por descuido si manana alguien agrega un estado
         // nuevo al enum: lo que no sea PUBLICADA y activa no entra.
+        // El 404 sale de VisibilidadDeEspecie para que este detalle y los
+        // sub-recursos respondan exactamente igual; si los textos se
+        // separaran, comparar las dos respuestas volveria a delatar los
+        // borradores.
         Especie publicada = especieRepository
                 .findByIdEspecieAndEstadoPublicacionAndActivaTrue(id, EstadoPublicacion.PUBLICADA)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe una especie con id " + id));
+                .orElseThrow(() -> VisibilidadDeEspecie.noEncontrada(id));
 
         return especieMapper.toResponse(publicada);
     }

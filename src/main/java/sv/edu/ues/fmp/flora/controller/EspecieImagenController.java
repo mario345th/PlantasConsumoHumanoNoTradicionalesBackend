@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.ImagenEspecieRequest;
 import sv.edu.ues.fmp.flora.dto.response.ImagenEspecieResponse;
 import sv.edu.ues.fmp.flora.service.ImagenEspecieService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /** Expone el listado y la creación de imágenes dentro de una especie. */
 @Tag(name = "Imágenes de especie", description = "Imágenes por URL y selección de principal")
@@ -21,6 +22,13 @@ import sv.edu.ues.fmp.flora.service.ImagenEspecieService;
 @RequiredArgsConstructor
 public class EspecieImagenController {
     private final ImagenEspecieService imagenEspecieService;
+
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
 
     /** Delega la consulta del historial o de las imágenes activas. */
     @Operation(summary = "Listar imágenes de una especie",
@@ -32,6 +40,8 @@ public class EspecieImagenController {
     public ResponseEntity<List<ImagenEspecieResponse>> listar(
             @PathVariable Long idEspecie,
             @RequestParam(name = "soloActivas", defaultValue = "false") boolean soloActivas) {
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
+
         return ResponseEntity.ok(imagenEspecieService.listarPorEspecie(idEspecie, soloActivas));
     }
 

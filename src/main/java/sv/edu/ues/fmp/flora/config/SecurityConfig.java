@@ -167,15 +167,19 @@ public class SecurityConfig {
      * que fichas PUBLICADA y activas: el listado del catalogo y el detalle
      * {@code /publicadas/{id}}, que resuelve a 404 lo que no este publicado.
      *
-     * <h2>Lo que sigue abierto y no deberia estarlo del todo</h2>
+     * <h2>Los sub-recursos: alcanzables aqui, filtrados en la logica</h2>
      * Los sub-recursos de una especie (sus fuentes, habitats, imagenes,
-     * nombres comunes, partes comestibles y videos) siguen publicos en
-     * {@code GET}: son los que pinta la ficha publica y cerrarlos romperia el
-     * catalogo. Pero <strong>ninguno filtra por el estado de la especie
-     * padre</strong>, asi que quien conozca el id de un borrador puede ver por
-     * esta via su multimedia y sus nombres comunes. Cerrarlo pide que cada uno
-     * de esos seis servicios compruebe el estado del padre; no entra en este
-     * cambio y queda anotado para el equipo.
+     * nombres comunes, partes comestibles y videos) siguen aqui en
+     * {@code GET}, porque son los que pinta la ficha publica y cerrarlos en el
+     * filtro romperia el catalogo. Que se vea su contenido <strong>ya no lo
+     * decide esta matriz</strong>: cada uno de esos seis {@code GET} pregunta a
+     * {@code VisibilidadDeEspecie}, que deja pasar si la especie esta
+     * PUBLICADA, o si quien llama trae {@code ESPECIE_CONSULTAR}, y responde
+     * 404 en el resto.
+     * <p>
+     * La decision tiene que estar en la logica y no aqui por el 404: el filtro
+     * solo sabe contestar 401 o 403, y un 403 sobre un borrador confirmaria que
+     * ese id existe. El 404 lo deja indistinguible de un id inventado.
      */
     private static final String[] ESPECIE_PUBLICA = {
             "/api/especies/publicadas",

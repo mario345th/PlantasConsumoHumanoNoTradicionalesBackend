@@ -14,6 +14,7 @@ import sv.edu.ues.fmp.flora.dto.request.EspecieHabitatRequest;
 import sv.edu.ues.fmp.flora.dto.request.EspecieHabitatActualizarRequest;
 import sv.edu.ues.fmp.flora.dto.response.EspecieHabitatResponse;
 import sv.edu.ues.fmp.flora.service.EspecieHabitatService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /** Expone los hábitats como recursos de una especie y delega sus reglas al servicio. */
 @Tag(name = "Especie-Hábitat", description = "Hábitats asociados a cada especie")
@@ -24,6 +25,13 @@ public class EspecieHabitatController {
 
     private final EspecieHabitatService especieHabitatService;
 
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     /** Devuelve los hábitats de la especie ordenados por nombre, o una lista vacía. */
     @Operation(summary = "Consultar los hábitats de una especie")
     @ApiResponse(responseCode = "200", description = "Relaciones ordenadas por nombre del hábitat")
@@ -31,6 +39,8 @@ public class EspecieHabitatController {
     @ApiResponse(responseCode = "404", description = "La especie no existe")
     @GetMapping
     public ResponseEntity<List<EspecieHabitatResponse>> listarPorEspecie(@PathVariable Long idEspecie) {
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
+
         return ResponseEntity.ok(especieHabitatService.listarPorEspecie(idEspecie));
     }
 

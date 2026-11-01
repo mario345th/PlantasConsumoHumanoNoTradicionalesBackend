@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.NombreComunRequest;
 import sv.edu.ues.fmp.flora.dto.response.NombreComunResponse;
 import sv.edu.ues.fmp.flora.service.NombreComunService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 
 @Tag(name = "Nombres comunes", description = "Nombres vernáculos de una especie")
@@ -31,6 +32,13 @@ public class EspecieNombreComunController {
 
     private final NombreComunService nombreComunService;
 
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Operation(summary = "Listar los nombres comunes de una especie")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
     @ApiResponse(responseCode = "404", description = "La especie no existe")
@@ -38,6 +46,8 @@ public class EspecieNombreComunController {
     public ResponseEntity<List<NombreComunResponse>> listar(
             @PathVariable Long idEspecie,
             @RequestParam(name = "soloActivos", defaultValue = "false") boolean soloActivos) {
+
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
 
         List<NombreComunResponse> respuesta = soloActivos
                 ? nombreComunService.listarActivosPorEspecie(idEspecie)

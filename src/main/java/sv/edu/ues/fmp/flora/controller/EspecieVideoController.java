@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import sv.edu.ues.fmp.flora.dto.request.VideoEspecieRequest;
 import sv.edu.ues.fmp.flora.dto.response.VideoEspecieResponse;
 import sv.edu.ues.fmp.flora.service.VideoEspecieService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Tag(name = "Videos de especies", description = "Videos asociados a especies")
 @RestController
@@ -31,6 +32,13 @@ public class EspecieVideoController {
 
     private final VideoEspecieService videoEspecieService;
 
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Operation(summary = "Listar videos de una especie")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
     @ApiResponse(responseCode = "404", description = "La especie no existe")
@@ -39,6 +47,8 @@ public class EspecieVideoController {
             @PathVariable Long idEspecie,
             @Parameter(description = "Si es true, excluye videos inactivos")
             @RequestParam(name = "soloActivos", defaultValue = "false") boolean soloActivos) {
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
+
         return ResponseEntity.ok(videoEspecieService.listarPorEspecie(idEspecie, soloActivos));
     }
 

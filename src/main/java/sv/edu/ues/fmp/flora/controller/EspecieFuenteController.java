@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.EspecieFuenteRequest;
 import sv.edu.ues.fmp.flora.dto.response.EspecieFuenteResponse;
 import sv.edu.ues.fmp.flora.service.EspecieFuenteService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 @Tag(name = "Especies-Fuentes", description = "Gestión de las referencias bibliográficas y documentales de cada especie")
 @RestController
@@ -31,11 +32,20 @@ public class EspecieFuenteController {
 
     private final EspecieFuenteService especieFuenteService;
 
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Operation(summary = "Listar todas las fuentes vinculadas a una especie")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
     @ApiResponse(responseCode = "404", description = "No existe la especie")
     @GetMapping
     public ResponseEntity<List<EspecieFuenteResponse>> listarPorEspecie(@PathVariable Long idEspecie) {
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
+
         return ResponseEntity.ok(especieFuenteService.listarPorEspecie(idEspecie));
     }
 

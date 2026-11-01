@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.EspecieParteComestibleRequest;
 import sv.edu.ues.fmp.flora.dto.response.EspecieParteComestibleResponse;
 import sv.edu.ues.fmp.flora.service.EspecieParteComestibleService;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 
 /**
  * Rutas anidadas de las partes comestibles bajo su especie: listar y crear
@@ -37,6 +38,13 @@ public class EspecieParteComestibleAnidadoController {
 
     private final EspecieParteComestibleService especieParteComestibleService;
 
+    /**
+     * Decide si quien llama puede ver el contenido de esta especie: publicada
+     * para cualquiera, sin publicar solo con ESPECIE_CONSULTAR, y 404 en el
+     * resto para no delatar los borradores.
+     */
+    private final VisibilidadDeEspecie visibilidadDeEspecie;
+
     @Operation(summary = "Listar las partes comestibles de una especie",
             description = "Ordenadas por nombre de la parte. Con soloActivas=true omite "
                     + "las que fueron dadas de baja lógica.")
@@ -49,6 +57,8 @@ public class EspecieParteComestibleAnidadoController {
             @PathVariable Long idEspecie,
             @Parameter(description = "Si es true, excluye las partes desactivadas")
             @RequestParam(name = "soloActivas", defaultValue = "false") boolean soloActivas) {
+
+        visibilidadDeEspecie.verificarQuePuedeVer(idEspecie);
 
         return ResponseEntity.ok(especieParteComestibleService.listarPorEspecie(idEspecie, soloActivas));
     }

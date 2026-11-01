@@ -226,10 +226,10 @@ class EspecieVisibilidadPublicaTest {
     }
 
     /**
-     * Los sub-recursos de una especie siguen abiertos en GET porque son los que
-     * pinta la ficha publica. Lo que esta prueba fija es que el cambio no los
-     * cerro; que tampoco filtren por el estado del padre esta anotado como
-     * pendiente en {@link SecurityConfig}.
+     * Los sub-recursos de una especie PUBLICADA siguen abiertos en GET porque
+     * son los que pinta la ficha publica. Lo que esta prueba fija es que el
+     * cambio no los cerro; que con un borrador respondan 404 se prueba en
+     * {@link EspecieSubRecursosVisibilidadTest}.
      */
     @Test
     void subRecursosDeUnaEspecie_siguenAbiertosSinToken() throws Exception {
