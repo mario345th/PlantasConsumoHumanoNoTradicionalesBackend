@@ -222,9 +222,16 @@ class AutenticacionJwtTest {
                 .andExpect(jsonPath("$.mensaje").exists());
     }
 
+    /**
+     * RUTA_PROTEGIDA es GET /api/usuarios, que desde que existe la
+     * autorizacion por permiso exige USUARIO_GESTIONAR. El token lo lleva
+     * porque lo que mide esta prueba es la autenticacion --que un token bien
+     * firmado entra-- y no el permiso, que se prueba aparte en
+     * {@link AutorizacionPorPermisoTest}.
+     */
     @Test
     void rutaProtegida_conTokenValido_devuelve200() throws Exception {
-        String token = tokenCon(List.of("ADMIN"), List.of());
+        String token = tokenCon(List.of("ADMIN"), List.of("USUARIO_GESTIONAR"));
 
         mockMvc.perform(get(RUTA_PROTEGIDA)
                         .param("pagina", "0")

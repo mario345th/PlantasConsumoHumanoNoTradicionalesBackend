@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +28,23 @@ import sv.edu.ues.fmp.flora.service.RolPermisoService;
 @RestController
 @RequestMapping("/api/rol-permisos")
 @RequiredArgsConstructor
+/*
+ * Cierre de la escalacion vertical de privilegios.
+ *
+ * Hasta aqui estos endpoints solo exigian estar autenticado: cualquier
+ * usuario con un token valido, incluso uno de rol CONSULTOR, podia asignarse
+ * ADMINISTRADOR o conceder cualquier permiso a cualquier rol. Un login
+ * bastaba para volverse administrador.
+ *
+ * El permiso va a nivel de clase y no por metodo porque aqui no hay ninguna
+ * excepcion que atender: ninguno de estos endpoints es publico --la matriz de
+ * SecurityConfig ya los deja todos detras de authenticated()-- y ninguno
+ * necesita un permiso distinto, los GET incluidos: saber que roles tiene
+ * quien, o que permisos trae un rol, es el mapa de la autorizacion y no tiene
+ * por que leerlo cualquiera. Anotar la clase ademas evita que un endpoint
+ * nuevo quede abierto por olvido, que es exactamente como se abrio esto.
+ */
+@PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
 public class RolPermisoController {
 
     private final RolPermisoService rolPermisoService;

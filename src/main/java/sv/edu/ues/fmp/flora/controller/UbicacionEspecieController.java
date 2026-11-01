@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,6 +38,7 @@ public class UbicacionEspecieController {
             @ApiResponse(responseCode = "404", description = "La Especie o el Distrito no fueron encontrados en la base de datos"),
             @ApiResponse(responseCode = "409", description = "La especie está desactivada o conflicto de coordenadas")
     })
+    @PreAuthorize("hasAuthority('UBICACION_GESTIONAR')")
     @PostMapping
     public ResponseEntity<UbicacionEspecieResponse> crear(@Valid @RequestBody UbicacionEspecieRequest request) {
         UbicacionEspecieResponse response = ubicacionEspecieService.crear(request);
@@ -61,6 +63,7 @@ public class UbicacionEspecieController {
             @ApiResponse(responseCode = "404", description = "La Ubicación, Especie o Distrito no fueron encontrados"),
             @ApiResponse(responseCode = "409", description = "La especie está desactivada")
     })
+    @PreAuthorize("hasAuthority('UBICACION_GESTIONAR')")
     @PutMapping("/{idUbicacion}")
     public ResponseEntity<UbicacionEspecieResponse> actualizarUbicacion(
             @PathVariable Long idUbicacion,
@@ -74,6 +77,7 @@ public class UbicacionEspecieController {
             @ApiResponse(responseCode = "204", description = "Ubicación desactivada exitosamente (Sin contenido de respuesta)"),
             @ApiResponse(responseCode = "404", description = "Ubicación no encontrada")
     })
+    @PreAuthorize("hasAuthority('UBICACION_GESTIONAR')")
     @DeleteMapping("/{idUbicacion}")
     public ResponseEntity<Void> desactivarUbicacion(@PathVariable Long idUbicacion) {
         ubicacionEspecieService.desactivarUbicacion(idUbicacion);

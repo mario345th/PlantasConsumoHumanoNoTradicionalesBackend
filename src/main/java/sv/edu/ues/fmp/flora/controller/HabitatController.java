@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -83,6 +84,7 @@ public class HabitatController {
             description = "Ya existe un hábitat con ese nombre. Si está activo, el mensaje lo "
                     + "indica sin más; si está desactivado, el mensaje incluye su id y la ruta "
                     + "PATCH para activarlo en lugar de crear uno nuevo.")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<HabitatResponse> crear(@Valid @RequestBody HabitatRequest request) {
         HabitatResponse creado = habitatService.crear(request);
@@ -99,6 +101,7 @@ public class HabitatController {
             description = "Otro hábitat ya usa ese nombre. Si está activo: \"Ya existe un "
                     + "hábitat con el nombre 'X'.\" Si está desactivado: \"Ya existe el hábitat "
                     + "'X', pero está desactivado. Actívelo con PATCH /api/habitats/{id}/activar.\"")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<HabitatResponse> actualizar(
             @PathVariable Long id,
@@ -112,6 +115,7 @@ public class HabitatController {
                     + "PATCH /{id}/activar.")
     @ApiResponse(responseCode = "204", description = "Hábitat desactivado")
     @ApiResponse(responseCode = "404", description = "No existe un hábitat con ese id")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         habitatService.desactivar(id);
@@ -123,6 +127,7 @@ public class HabitatController {
                     + "está activo no cambia nada y devuelve 200 igualmente.")
     @ApiResponse(responseCode = "200", description = "Hábitat activo")
     @ApiResponse(responseCode = "404", description = "No existe un hábitat con ese id")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<HabitatResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(habitatService.activar(id));

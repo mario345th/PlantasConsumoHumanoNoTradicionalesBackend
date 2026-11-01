@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -40,6 +41,7 @@ public class VideoEspecieController {
     @ApiResponse(responseCode = "400", description = "Los campos no son válidos")
     @ApiResponse(responseCode = "404", description = "El video no existe")
     @ApiResponse(responseCode = "409", description = "La especie o parte está desactivada")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<VideoEspecieResponse> actualizar(
             @PathVariable Long id, @Valid @RequestBody VideoEspecieRequest request) {
@@ -49,6 +51,7 @@ public class VideoEspecieController {
     @Operation(summary = "Dar de baja lógica un video")
     @ApiResponse(responseCode = "204", description = "Video desactivado")
     @ApiResponse(responseCode = "404", description = "El video no existe")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         videoEspecieService.desactivar(id);
@@ -59,6 +62,7 @@ public class VideoEspecieController {
     @ApiResponse(responseCode = "200", description = "Video activo")
     @ApiResponse(responseCode = "404", description = "El video no existe")
     @ApiResponse(responseCode = "409", description = "La especie o parte está desactivada")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<VideoEspecieResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(videoEspecieService.activar(id));

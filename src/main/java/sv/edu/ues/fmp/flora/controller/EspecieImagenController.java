@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class EspecieImagenController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos o URL incorrecta")
     @ApiResponse(responseCode = "404", description = "La especie o la parte comestible no existe")
     @ApiResponse(responseCode = "409", description = "Especie o parte desactivada, parte ajena o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PostMapping
     public ResponseEntity<ImagenEspecieResponse> crear(@PathVariable Long idEspecie,
             @Valid @RequestBody ImagenEspecieRequest request) {

@@ -2,6 +2,7 @@ package sv.edu.ues.fmp.flora.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -29,6 +30,17 @@ import sv.edu.ues.fmp.flora.service.RolService;
 @RestController
 @RequestMapping("/api/roles")
 @RequiredArgsConstructor
+/*
+ * Todo el controlador exige USUARIO_GESTIONAR, los GET incluidos.
+ *
+ * Va a nivel de clase porque aqui no hay excepciones: ninguno de estos
+ * endpoints es publico --la matriz de SecurityConfig ya los deja todos detras
+ * de authenticated()-- y ninguno necesita un permiso distinto. El catalogo de
+ * roles y de permisos es la definicion de quien puede hacer que; listarlo o
+ * editarlo es parte de administrar la seguridad, no de consultar el catalogo
+ * botanico.
+ */
+@PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
 public class RolController {
 
     private final RolService rolService;

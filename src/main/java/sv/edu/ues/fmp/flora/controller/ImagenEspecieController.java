@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class ImagenEspecieController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos o URL incorrecta")
     @ApiResponse(responseCode = "404", description = "La imagen o la parte comestible no existe")
     @ApiResponse(responseCode = "409", description = "Estado inválido, parte ajena o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<ImagenEspecieResponse> actualizar(@PathVariable Long id,
             @Valid @RequestBody ImagenEspecieRequest request) {
@@ -50,6 +52,7 @@ public class ImagenEspecieController {
     @ApiResponse(responseCode = "204", description = "Imagen desactivada")
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         imagenEspecieService.desactivar(id);
@@ -63,6 +66,7 @@ public class ImagenEspecieController {
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen o la parte comestible no existe")
     @ApiResponse(responseCode = "409", description = "Especie o parte desactivada, parte ajena o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<ImagenEspecieResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(imagenEspecieService.activar(id));
@@ -75,6 +79,7 @@ public class ImagenEspecieController {
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
     @ApiResponse(responseCode = "409", description = "Imagen o especie desactivada, o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/marcar-principal")
     public ResponseEntity<ImagenEspecieResponse> marcarComoPrincipal(@PathVariable Long id) {
         return ResponseEntity.ok(imagenEspecieService.marcarComoPrincipal(id));

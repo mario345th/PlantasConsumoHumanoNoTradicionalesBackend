@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,6 +44,7 @@ public class EspecieFuenteController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos en el request")
     @ApiResponse(responseCode = "404", description = "No existe la especie o la fuente indicada, o alguna de ellas está inactiva")
     @ApiResponse(responseCode = "409", description = "La fuente ya está vinculada a esta especie")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @PostMapping
     public ResponseEntity<EspecieFuenteResponse> registrar(
             @PathVariable Long idEspecie,
@@ -53,6 +55,7 @@ public class EspecieFuenteController {
     @Operation(summary = "Actualizar la observación de una fuente ya vinculada")
     @ApiResponse(responseCode = "200", description = "Observación actualizada")
     @ApiResponse(responseCode = "404", description = "La relación no existe")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @PutMapping("/{idFuente}")
     public ResponseEntity<EspecieFuenteResponse> actualizar(
             @PathVariable Long idEspecie,
@@ -64,6 +67,7 @@ public class EspecieFuenteController {
     @Operation(summary = "Desvincular una fuente de una especie (Eliminación física de la relación)")
     @ApiResponse(responseCode = "204", description = "Vínculo eliminado")
     @ApiResponse(responseCode = "404", description = "La relación no existe")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @DeleteMapping("/{idFuente}")
     public ResponseEntity<Void> eliminar(@PathVariable Long idEspecie, @PathVariable Long idFuente) {
         especieFuenteService.eliminar(idEspecie, idFuente);

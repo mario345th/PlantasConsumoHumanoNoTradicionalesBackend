@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import sv.edu.ues.fmp.flora.dto.request.MunicipioRequest;
 import sv.edu.ues.fmp.flora.dto.request.MunicipioResponse;
@@ -81,6 +82,7 @@ public class MunicipioController {
     @ApiResponse(responseCode = "404", description = "El departamento indicado no existe")
     @ApiResponse(responseCode = "409",
             description = "Ese departamento ya tiene un municipio con ese nombre")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<MunicipioResponse> crear(@Valid @RequestBody MunicipioRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.crear(request));
@@ -94,6 +96,7 @@ public class MunicipioController {
     @ApiResponse(responseCode = "404", description = "No existe el municipio o el departamento")
     @ApiResponse(responseCode = "409",
             description = "Ese departamento ya tiene otro municipio con ese nombre")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<MunicipioResponse> actualizar(
             @PathVariable Long id, @Valid @RequestBody MunicipioRequest request) {
@@ -105,6 +108,7 @@ public class MunicipioController {
                     + "foránea y un DELETE físico rompería esas referencias.")
     @ApiResponse(responseCode = "204", description = "Municipio desactivado")
     @ApiResponse(responseCode = "404", description = "No existe un municipio con ese id")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         service.desactivar(id);

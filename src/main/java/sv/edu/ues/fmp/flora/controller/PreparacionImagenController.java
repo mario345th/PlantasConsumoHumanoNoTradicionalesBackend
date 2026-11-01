@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -49,6 +50,7 @@ public class PreparacionImagenController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos o URL incorrecta")
     @ApiResponse(responseCode = "404", description = "La preparación de consumo no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PostMapping
     public ResponseEntity<ImagenPreparacionResponse> crear(
             @PathVariable Long idPreparacion,

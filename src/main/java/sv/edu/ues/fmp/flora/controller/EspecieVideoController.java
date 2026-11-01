@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,6 +47,7 @@ public class EspecieVideoController {
     @ApiResponse(responseCode = "400", description = "Los campos del video no son válidos")
     @ApiResponse(responseCode = "404", description = "La especie o parte no existe")
     @ApiResponse(responseCode = "409", description = "La especie o parte está desactivada")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PostMapping
     public ResponseEntity<VideoEspecieResponse> crear(
             @PathVariable Long idEspecie,

@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import sv.edu.ues.fmp.flora.dto.request.PreparacionConsumoRequest;
 import sv.edu.ues.fmp.flora.dto.request.PreparacionConsumoUpdateRequest;
@@ -51,6 +52,7 @@ public class PreparacionConsumoController {
         return ResponseEntity.ok(service.obtenerPorId(id));
     }
 
+    @PreAuthorize("hasAuthority('PREPARACION_GESTIONAR')")
     @PostMapping
     @Operation(summary = "Crear preparación de consumo",
             description = "Parte comestible existente y activa; nombre, descripción, tipo de consumo y procedimiento obligatorios. "
@@ -62,6 +64,7 @@ public class PreparacionConsumoController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.crear(request));
     }
 
+    @PreAuthorize("hasAuthority('PREPARACION_GESTIONAR')")
     @PutMapping("/{id}")
     @Operation(summary = "Actualizar preparación de consumo",
             description = "Parte, nombre, descripción, tipo de consumo y procedimiento son obligatorios. Permite cambiar la parte. "
@@ -74,6 +77,7 @@ public class PreparacionConsumoController {
         return ResponseEntity.ok(service.actualizar(id, request));
     }
 
+    @PreAuthorize("hasAuthority('PREPARACION_GESTIONAR')")
     @DeleteMapping("/{id}")
     @Operation(summary = "Desactivar preparación de consumo",
             description = "Establece activa=false sin borrar el registro. Puede repetirse aunque ya esté inactivo. "

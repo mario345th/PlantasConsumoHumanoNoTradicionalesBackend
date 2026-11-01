@@ -42,6 +42,7 @@ public class UsuarioController {
                     + "en 0; tamanio acepta de 1 a 100 elementos por página.")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
     @ApiResponse(responseCode = "400", description = "Parametro invalido")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @GetMapping
     public ResponseEntity<PaginaResponse<UsuarioResponse>> listar(
             @Parameter(description = "Si es true, excluye las cuentas desactivadas")
@@ -63,6 +64,7 @@ public class UsuarioController {
     @ApiResponse(responseCode = "400", description = "Id invalido")
     @ApiResponse(responseCode = "400", description = "Parametro invalido")
     @ApiResponse(responseCode = "404", description = "No existe un usuario con ese id")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @GetMapping("/{id}")
     public ResponseEntity<UsuarioResponse> obtenerPorId(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioService.obtenerPorId(id));
@@ -75,6 +77,7 @@ public class UsuarioController {
     @ApiResponse(responseCode = "201", description = "Usuario creado")
     @ApiResponse(responseCode = "400", description = "El cuerpo de la petición no es válido")
     @ApiResponse(responseCode = "409", description = "Ya existe un usuario con ese correo o nombre de usuario")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<UsuarioResponse> crear(@Valid @RequestBody UsuarioCreationRequest request) {
         UsuarioResponse creado = usuarioService.crear(request);
@@ -90,6 +93,7 @@ public class UsuarioController {
     @ApiResponse(responseCode = "404", description = "No existe un usuario con ese id")
     @ApiResponse(responseCode = "409",
             description = "Ya existe otro usuario con ese correo o nombre de usuario")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<UsuarioResponse> actualizar(
             @PathVariable Long id,
@@ -104,6 +108,7 @@ public class UsuarioController {
                     + "referencias. Una cuenta inactiva no puede iniciar sesión.")
     @ApiResponse(responseCode = "204", description = "Usuario desactivado")
     @ApiResponse(responseCode = "404", description = "No existe un usuario con ese id")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         usuarioService.desactivar(id);
@@ -116,6 +121,7 @@ public class UsuarioController {
                     + "sesión con las mismas credenciales de siempre.")
     @ApiResponse(responseCode = "200", description = "Usuario reactivado")
     @ApiResponse(responseCode = "404", description = "No existe un usuario con ese id")
+    @PreAuthorize("hasAuthority('USUARIO_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<UsuarioResponse> reactivar(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioService.reactivar(id));

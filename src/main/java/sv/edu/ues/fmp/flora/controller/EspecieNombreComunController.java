@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +49,7 @@ public class EspecieNombreComunController {
     @Operation(summary = "Agregar un nombre común a una especie")
     @ApiResponse(responseCode = "201", description = "Nombre común creado")
     @ApiResponse(responseCode = "409", description = "La especie ya tiene ese nombre")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PostMapping
     public ResponseEntity<NombreComunResponse> crear(
             @PathVariable Long idEspecie,

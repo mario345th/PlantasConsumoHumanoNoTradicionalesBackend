@@ -3,6 +3,7 @@ package sv.edu.ues.fmp.flora.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -56,6 +57,7 @@ public class VideoPreparacionController {
     @ApiResponse(responseCode = "400", description = "Campos inválidos o URL incorrecta")
     @ApiResponse(responseCode = "404", description = "El video no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<VideoPreparacionResponse> actualizar(
             @PathVariable Long id,
@@ -67,6 +69,7 @@ public class VideoPreparacionController {
     @ApiResponse(responseCode = "204", description = "Video desactivado")
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "El video no existe")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         videoPreparacionService.desactivar(id);
@@ -78,6 +81,7 @@ public class VideoPreparacionController {
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "El video no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<VideoPreparacionResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(videoPreparacionService.activar(id));

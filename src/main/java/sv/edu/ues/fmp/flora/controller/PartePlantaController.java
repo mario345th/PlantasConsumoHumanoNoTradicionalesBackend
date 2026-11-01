@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -92,6 +93,7 @@ public class PartePlantaController {
             description = "Ya existe una parte con ese nombre. Si está activa, el mensaje lo "
                     + "indica sin más; si está desactivada, el mensaje incluye su id y la ruta "
                     + "PATCH para activarla en lugar de crear una nueva.")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<PartePlantaResponse> crear(
             @Valid @RequestBody PartePlantaRequest request) {
@@ -112,6 +114,7 @@ public class PartePlantaController {
                     + "de planta con el nombre 'X'.\" Si está desactivada: \"Ya existe la parte "
                     + "de planta 'X', pero está desactivada. Actívela con PATCH "
                     + "/api/partes-planta/{id}/activar.\"")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<PartePlantaResponse> actualizar(
             @PathVariable Long id,
@@ -127,6 +130,7 @@ public class PartePlantaController {
                     + "esté desactivada, así que no se puede volver a crear.")
     @ApiResponse(responseCode = "204", description = "Parte desactivada")
     @ApiResponse(responseCode = "404", description = "No existe una parte con ese id")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         partePlantaService.desactivar(id);
@@ -138,6 +142,7 @@ public class PartePlantaController {
     @ApiResponse(responseCode = "200", description = "Parte activada o ya estaba activa")
     @ApiResponse(responseCode = "400", description = "El id no es un número válido")
     @ApiResponse(responseCode = "404", description = "No existe una parte con ese id")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<PartePlantaResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(partePlantaService.activar(id));

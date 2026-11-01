@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -54,6 +55,7 @@ public class NutrienteController {
     }
 
     @Operation(summary = "Crear un nuevo nutriente")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<NutrienteResponse> crear(
             @Valid @RequestBody NutrienteRequest request) {
@@ -62,6 +64,7 @@ public class NutrienteController {
     }
 
     @Operation(summary = "Actualizar un nutriente existente")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<NutrienteResponse> actualizar(
             @PathVariable Long id,
@@ -70,6 +73,7 @@ public class NutrienteController {
     }
 
     @Operation(summary = "Desactivar (baja lógica) un nutriente")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         nutrienteService.desactivar(id);
@@ -97,6 +101,7 @@ public class NutrienteController {
     }
     @Operation(summary = "Reactivar un nutriente dado de baja",
             description = "Vuelve a activar un nutriente desactivado. Si ya estaba activo, no hace cambios.")
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<NutrienteResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(nutrienteService.activar(id));

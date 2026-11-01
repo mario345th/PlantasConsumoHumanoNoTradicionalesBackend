@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -51,6 +52,7 @@ public class EpocaCosechaController {
         );
     }
 
+    @PreAuthorize("hasAuthority('COSECHA_GESTIONAR')")
     @PostMapping
     public ResponseEntity<EpocaCosechaResponse> crear(
             @Valid @RequestBody EpocaCosechaRequest request
@@ -59,6 +61,7 @@ public class EpocaCosechaController {
                 .body(epocaCosechaService.crear(request));
     }
 
+    @PreAuthorize("hasAuthority('COSECHA_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<EpocaCosechaResponse> actualizar(
             @PathVariable Long id,
@@ -69,12 +72,14 @@ public class EpocaCosechaController {
         );
     }
 
+    @PreAuthorize("hasAuthority('COSECHA_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         epocaCosechaService.desactivar(id);
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAuthority('COSECHA_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<EpocaCosechaResponse> activar(
             @PathVariable Long id

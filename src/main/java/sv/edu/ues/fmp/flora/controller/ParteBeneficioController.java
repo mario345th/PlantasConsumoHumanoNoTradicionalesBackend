@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import sv.edu.ues.fmp.flora.dto.request.ParteBeneficioRequest;
 import sv.edu.ues.fmp.flora.dto.request.ParteBeneficioUpdateRequest;
@@ -54,6 +55,7 @@ public class ParteBeneficioController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos o campos obligatorios ausentes")
     @ApiResponse(responseCode = "404", description = "No existe un registro relacionado")
     @ApiResponse(responseCode = "409", description = "Combinación duplicada, relación inactiva o conflicto de integridad")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @PostMapping
     public ResponseEntity<ParteBeneficioResponse> crear(@Valid @RequestBody ParteBeneficioRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(parteBeneficioService.crear(request));
@@ -67,6 +69,7 @@ public class ParteBeneficioController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos")
     @ApiResponse(responseCode = "404", description = "No existe el registro de parte beneficio o un registro relacionado")
     @ApiResponse(responseCode = "409", description = "Relación inactiva o conflicto de integridad")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @PutMapping("/{idEspecieParte}/{idBeneficio}")
     public ResponseEntity<ParteBeneficioResponse> actualizar(@PathVariable Long idEspecieParte,
                                                              @PathVariable Long idBeneficio, @Valid @RequestBody ParteBeneficioUpdateRequest request) {
@@ -78,6 +81,7 @@ public class ParteBeneficioController {
     @ApiResponse(responseCode = "204", description = "Parte beneficio desactivado")
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "El registro de parte beneficio no existe")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @DeleteMapping("/{idEspecieParte}/{idBeneficio}")
     public ResponseEntity<Void> desactivar(@PathVariable Long idEspecieParte, @PathVariable Long idBeneficio) {
         parteBeneficioService.desactivar(idEspecieParte, idBeneficio);

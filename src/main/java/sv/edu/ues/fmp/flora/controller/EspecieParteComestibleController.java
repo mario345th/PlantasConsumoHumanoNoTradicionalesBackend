@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -51,6 +52,7 @@ public class EspecieParteComestibleController {
                     + "idPartePlanta: la parte no se puede modificar "
                     + "(erroresValidacion.idPartePlanta)")
     @ApiResponse(responseCode = "404", description = "No existe una parte comestible con ese id")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<EspecieParteComestibleResponse> actualizar(
             @PathVariable Long id,
@@ -65,6 +67,7 @@ public class EspecieParteComestibleController {
     @ApiResponse(responseCode = "204", description = "Parte comestible desactivada")
     @ApiResponse(responseCode = "400", description = "El id no tiene formato numérico")
     @ApiResponse(responseCode = "404", description = "No existe una parte comestible con ese id")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         especieParteComestibleService.desactivar(id);
@@ -81,6 +84,7 @@ public class EspecieParteComestibleController {
     @ApiResponse(responseCode = "400", description = "El id no tiene formato numérico")
     @ApiResponse(responseCode = "404", description = "No existe una parte comestible con ese id")
     @ApiResponse(responseCode = "409", description = "La parte del catálogo está desactivada")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<EspecieParteComestibleResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(especieParteComestibleService.activar(id));

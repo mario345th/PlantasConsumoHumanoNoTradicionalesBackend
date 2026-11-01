@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -71,6 +72,7 @@ public class EspecieController {
                     + "enviados en el cuerpo son ignorados silenciosamente; el flujo "
                     + "editorial se gestiona con los endpoints PATCH dedicados "
                     + "(enviar-revision, validar, publicar, rechazar).")
+    @PreAuthorize("hasAuthority('ESPECIE_CREAR')")
     @PostMapping
     public ResponseEntity<EspecieResponse> crear(@Valid @RequestBody EspecieRequest request) {
         EspecieResponse creada = especieService.crear(request);
@@ -78,6 +80,7 @@ public class EspecieController {
     }
 
     @Operation(summary = "Actualizar los datos editables de una especie y su taxonomía")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PutMapping("/{id}")
     public ResponseEntity<EspecieResponse> actualizar(
             @PathVariable Long id,
@@ -91,6 +94,7 @@ public class EspecieController {
      * especie: modifica su clasificacion sin tocar la ficha.
      */
     @Operation(summary = "Rectificar solo la clasificación taxonómica de una especie")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PatchMapping("/{id}/taxonomia")
     public ResponseEntity<EspecieResponse> actualizarTaxonomia(
             @PathVariable Long id,
@@ -100,12 +104,14 @@ public class EspecieController {
     }
 
     @Operation(summary = "Enviar la ficha a revisión")
+    @PreAuthorize("hasAuthority('ESPECIE_VALIDAR')")
     @PatchMapping("/{id}/enviar-revision")
     public ResponseEntity<EspecieResponse> enviarARevision(@PathVariable Long id) {
         return ResponseEntity.ok(especieService.enviarARevision(id));
     }
 
     @Operation(summary = "Marcar la ficha como validada, sin publicarla")
+    @PreAuthorize("hasAuthority('ESPECIE_VALIDAR')")
     @PatchMapping("/{id}/validar")
     public ResponseEntity<EspecieResponse> validar(
             @PathVariable Long id,
@@ -117,6 +123,7 @@ public class EspecieController {
     }
 
     @Operation(summary = "Publicar una ficha ya validada")
+    @PreAuthorize("hasAuthority('ESPECIE_PUBLICAR')")
     @PatchMapping("/{id}/publicar")
     public ResponseEntity<EspecieResponse> publicar(
             @PathVariable Long id,
@@ -128,6 +135,7 @@ public class EspecieController {
     }
 
     @Operation(summary = "Rechazar una ficha en revisión")
+    @PreAuthorize("hasAuthority('ESPECIE_VALIDAR')")
     @PatchMapping("/{id}/rechazar")
     public ResponseEntity<EspecieResponse> rechazar(@PathVariable Long id) {
         return ResponseEntity.ok(especieService.rechazar(id));
@@ -135,6 +143,7 @@ public class EspecieController {
 
     @Operation(summary = "Dar de baja lógica una especie")
     @ApiResponse(responseCode = "204", description = "Especie desactivada")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         especieService.desactivar(id);
@@ -148,6 +157,7 @@ public class EspecieController {
                     + "catálogo público de inmediato.")
     @ApiResponse(responseCode = "200", description = "Especie activa")
     @ApiResponse(responseCode = "404", description = "No existe una especie con ese id")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<EspecieResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(especieService.activar(id));

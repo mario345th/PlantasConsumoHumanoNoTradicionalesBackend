@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import sv.edu.ues.fmp.flora.dto.request.EspecieHabitatRequest;
 import sv.edu.ues.fmp.flora.dto.request.EspecieHabitatActualizarRequest;
@@ -40,6 +41,7 @@ public class EspecieHabitatController {
     @ApiResponse(responseCode = "400", description = "Solicitud inválida o falta idHabitat")
     @ApiResponse(responseCode = "404", description = "La especie o el hábitat no existe")
     @ApiResponse(responseCode = "409", description = "Relación duplicada, padre desactivado o conflicto de integridad")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PostMapping
     public ResponseEntity<EspecieHabitatResponse> crear(
             @PathVariable Long idEspecie, @Valid @RequestBody EspecieHabitatRequest request) {
@@ -54,6 +56,7 @@ public class EspecieHabitatController {
     @ApiResponse(responseCode = "400", description = "Solicitud o IDs inválidos")
     @ApiResponse(responseCode = "404", description = "La relación no existe")
     @ApiResponse(responseCode = "409", description = "Conflicto de integridad")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PutMapping("/{idHabitat}")
     public ResponseEntity<EspecieHabitatResponse> actualizar(
             @PathVariable Long idEspecie, @PathVariable Long idHabitat,
@@ -67,6 +70,7 @@ public class EspecieHabitatController {
     @ApiResponse(responseCode = "400", description = "IDs inválidos")
     @ApiResponse(responseCode = "404", description = "La relación no existe")
     @ApiResponse(responseCode = "409", description = "Conflicto de integridad")
+    @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @DeleteMapping("/{idHabitat}")
     public ResponseEntity<Void> eliminar(@PathVariable Long idEspecie, @PathVariable Long idHabitat) {
         especieHabitatService.eliminar(idEspecie, idHabitat);

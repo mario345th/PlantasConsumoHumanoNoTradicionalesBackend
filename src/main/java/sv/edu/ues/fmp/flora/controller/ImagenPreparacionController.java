@@ -3,6 +3,7 @@ package sv.edu.ues.fmp.flora.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -57,6 +58,7 @@ public class ImagenPreparacionController {
     @ApiResponse(responseCode = "400", description = "Datos inválidos o URL incorrecta")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<ImagenPreparacionResponse> actualizar(
             @PathVariable Long id,
@@ -69,6 +71,7 @@ public class ImagenPreparacionController {
     @ApiResponse(responseCode = "204", description = "Imagen desactivada")
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         imagenPreparacionService.desactivar(id);
@@ -81,6 +84,7 @@ public class ImagenPreparacionController {
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<ImagenPreparacionResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(imagenPreparacionService.activar(id));
@@ -92,6 +96,7 @@ public class ImagenPreparacionController {
     @ApiResponse(responseCode = "400", description = "Identificador inválido")
     @ApiResponse(responseCode = "404", description = "La imagen no existe")
     @ApiResponse(responseCode = "409", description = "Imagen o preparación desactivada, o conflicto de integridad")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PatchMapping("/{id}/marcar-principal")
     public ResponseEntity<ImagenPreparacionResponse> marcarComoPrincipal(@PathVariable Long id) {
         return ResponseEntity.ok(imagenPreparacionService.marcarComoPrincipal(id));

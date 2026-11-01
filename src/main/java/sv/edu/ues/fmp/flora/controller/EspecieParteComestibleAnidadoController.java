@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,6 +65,7 @@ public class EspecieParteComestibleAnidadoController {
     @ApiResponse(responseCode = "409",
             description = "La especie ya tiene esa parte, o la especie o la parte del catálogo "
                     + "están desactivadas")
+    @PreAuthorize("hasAuthority('PARTE_GESTIONAR')")
     @PostMapping
     public ResponseEntity<EspecieParteComestibleResponse> crear(
             @PathVariable Long idEspecie,

@@ -3,6 +3,7 @@ package sv.edu.ues.fmp.flora.controller;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +47,7 @@ public class AporteNutricionalController {
     }
 
     @Operation(summary = "Registrar un nuevo aporte nutricional")
+    @PreAuthorize("hasAuthority('NUTRICION_GESTIONAR')")
     @PostMapping
     public ResponseEntity<AporteNutricionalResponse> crear(
             @Valid @RequestBody AporteNutricionalRequest request) {
@@ -55,6 +57,7 @@ public class AporteNutricionalController {
 
 
     @Operation(summary = "Actualizar un aporte nutricional existente")
+    @PreAuthorize("hasAuthority('NUTRICION_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<AporteNutricionalResponse> actualizar(
             @PathVariable Long id,
@@ -63,6 +66,7 @@ public class AporteNutricionalController {
     }
 
     @Operation(summary = "Eliminar físicamente un aporte nutricional")
+    @PreAuthorize("hasAuthority('NUTRICION_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         aporteService.eliminar(id);

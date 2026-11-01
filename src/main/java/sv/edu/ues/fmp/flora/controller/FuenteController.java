@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -58,6 +59,7 @@ public class FuenteController {
             description = "Datos inválidos (título vacío, tipo de fuente inexistente, "
                     + "o SITIO_WEB sin una url navegable)")
     @ApiResponse(responseCode = "409", description = "Ya existe una fuente con ese título")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @PostMapping
     public ResponseEntity<FuenteResponse> crear(
             @Valid @RequestBody FuenteRequest request) {
@@ -72,6 +74,7 @@ public class FuenteController {
                     + "o SITIO_WEB sin una url navegable)")
     @ApiResponse(responseCode = "404", description = "No existe una fuente con ese id")
     @ApiResponse(responseCode = "409", description = "Ya existe otra fuente con ese título")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<FuenteResponse> actualizar(
             @PathVariable Long id,
@@ -86,6 +89,7 @@ public class FuenteController {
     @ApiResponse(responseCode = "204", description = "Fuente desactivada")
     @ApiResponse(responseCode = "400", description = "El id no tiene formato numérico")
     @ApiResponse(responseCode = "404", description = "No existe una fuente con ese id")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         fuenteService.desactivar(id);
@@ -98,6 +102,7 @@ public class FuenteController {
     @ApiResponse(responseCode = "200", description = "Fuente activa")
     @ApiResponse(responseCode = "400", description = "El id no tiene formato numérico")
     @ApiResponse(responseCode = "404", description = "No existe una fuente con ese id")
+    @PreAuthorize("hasAuthority('FUENTE_GESTIONAR')")
     @PatchMapping("/{id}/activar")
     public ResponseEntity<FuenteResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(fuenteService.activar(id));

@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,6 +41,7 @@ public class DepartamentoController {
     }
 
     /** Valida la solicitud y responde 201 cuando el departamento se crea. */
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PostMapping
     public ResponseEntity<DepartamentoResponse> crear(
             @Valid @RequestBody DepartamentoRequest request) {
@@ -47,6 +49,7 @@ public class DepartamentoController {
     }
 
     /** Valida y actualiza el departamento solicitado. */
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @PutMapping("/{id}")
     public ResponseEntity<DepartamentoResponse> actualizar(
             @PathVariable Long id,
@@ -55,6 +58,7 @@ public class DepartamentoController {
     }
 
     /** Ejecuta la baja lógica y responde 204 sin cuerpo. */
+    @PreAuthorize("hasAuthority('CATALOGO_GESTIONAR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         departamentoService.desactivar(id);
