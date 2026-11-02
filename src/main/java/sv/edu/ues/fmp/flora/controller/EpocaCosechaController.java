@@ -30,6 +30,15 @@ public class EpocaCosechaController {
 
     private final EpocaCosechaService epocaCosechaService;
 
+    /**
+     * Listado administrativo. Entra por el id de la parte comestible, pero
+     * --al contrario que sus hermanos-- nunca pregunto por el estado de la
+     * ficha de la que cuelga esa parte, asi que sin permiso devolvia las epocas
+     * de los borradores a quien probara numeros. Se cierra con el permiso en
+     * vez de con un 404 en el servicio porque la respuesta no confirma que
+     * exista ninguna epoca: la parte inexistente ya daba 404 antes.
+     */
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping
     public ResponseEntity<List<EpocaCosechaResponse>> listar(
             @RequestParam Long idEspecieParte,

@@ -25,10 +25,20 @@ import sv.edu.ues.fmp.flora.service.PreparacionConsumoService;
 public class PreparacionConsumoController {
     private final PreparacionConsumoService service;
 
+    /**
+     * Listado administrativo: recorre las preparaciones de todas las especies
+     * y no mira el estado de ninguna ficha, asi que sin permiso mostraria las
+     * de los borradores. El listado por parte, que si lo filtra en el
+     * servicio, sigue abierto.
+     */
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping
     @Operation(summary = "Listar preparaciones de consumo",
-            description = "Incluye activas e inactivas. soloActivas=true filtra el estado de la preparación. Ordenadas por orden de presentación e ID.")
+            description = "Requiere el permiso ESPECIE_CONSULTAR: es el listado global, incluye las preparaciones de fichas sin publicar. "
+                    + "Incluye activas e inactivas. soloActivas=true filtra el estado de la preparación. Ordenadas por orden de presentación e ID.")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
+    @ApiResponse(responseCode = "401", description = "Falta el token")
+    @ApiResponse(responseCode = "403", description = "El token no trae ESPECIE_CONSULTAR")
     public ResponseEntity<List<PreparacionConsumoResponse>> listar(
             @RequestParam(defaultValue = "false") boolean soloActivas) {
         return ResponseEntity.ok(service.listar(soloActivas));

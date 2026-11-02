@@ -34,7 +34,16 @@ public class AporteNutricionalController {
         return ResponseEntity.ok(aporteService.listarPorEspecieParte(idEspecieParte));
     }
 
-    @Operation(summary = "Listar aportes por nutriente", description = "Obtiene todas las plantas/partes que aportan un nutriente específico.")
+    /**
+     * Listado administrativo: el id de la URL es el del nutriente, no el de una
+     * ficha, asi que la consulta cruza todas las especies y sin permiso
+     * mostraria las partes de los borradores. El listado por especie-parte, que
+     * si entra por el padre, sigue abierto.
+     */
+    @Operation(summary = "Listar aportes por nutriente",
+            description = "Requiere el permiso ESPECIE_CONSULTAR: cruza todas las especies, incluidas las que no estan publicadas. "
+                    + "Obtiene todas las plantas/partes que aportan un nutriente específico.")
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping("/nutriente/{idNutriente}")
     public ResponseEntity<List<AporteNutricionalResponse>> listarPorNutriente(@PathVariable Long idNutriente) {
         return ResponseEntity.ok(aporteService.listarPorNutriente(idNutriente));

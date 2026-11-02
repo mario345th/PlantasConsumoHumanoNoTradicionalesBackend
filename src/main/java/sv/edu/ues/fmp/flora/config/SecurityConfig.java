@@ -86,6 +86,13 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  *         borradores a cualquier anonimo.</td>
  *   </tr>
  *   <tr>
+ *     <td>{@code GET} de las rutas en {@link #LISTADOS_GLOBALES}</td>
+ *     <td><strong>ESPECIE_CONSULTAR (cambia)</strong></td>
+ *     <td>Listados que recorren el contenido de todas las especies sin mirar
+ *         el estado de ninguna. Eran publicos y mostraban tambien los
+ *         renglones de los borradores.</td>
+ *   </tr>
+ *   <tr>
  *     <td>{@code POST}, {@code PUT}, {@code PATCH} y {@code DELETE} de esas
  *         mismas rutas del catalogo</td>
  *     <td><strong>autenticado (cambia)</strong></td>
@@ -129,6 +136,12 @@ public class SecurityConfig {
      * Las rutas de especie <strong>no</strong> estan aqui: tienen su propia
      * lista en {@link #ESPECIE_PUBLICA}, porque no todas sus consultas se
      * pueden abrir igual.
+     * <p>
+     * Los comodines de esta lista ya no son completos: {@link
+     * #LISTADOS_GLOBALES} recorta de ellos cinco {@code GET} concretos, y por
+     * eso esa lista se registra antes en {@code authorizeHttpRequests}. Al
+     * agregar una ruta aqui conviene revisar si su listado sin filtros cae en
+     * el mismo caso.
      */
     private static final String[] CATALOGO_PUBLICO = {
             "/api/aportes-nutricionales/**",
@@ -149,6 +162,47 @@ public class SecurityConfig {
             "/api/ubicaciones/**",
             "/api/videos-especie/**",
             "/api/videos-preparacion/**"
+    };
+
+    /**
+     * Listados globales de contenido de especie: sus {@code GET} pasan a
+     * exigir {@code ESPECIE_CONSULTAR}, igual que {@code GET /api/especies}.
+     *
+     * <h2>Que fuga cierran</h2>
+     * Los cinco recorren el contenido de <strong>todas</strong> las especies
+     * --un {@code findAll()}, o un filtro por nutriente-- y arman la respuesta
+     * sin mirar el estado de la ficha de la que cuelga cada renglon. Los
+     * cambios anteriores cerraron las consultas que entran por el id de una
+     * especie o por el de un hijo suyo; estas no reciben ningun id de ficha, y
+     * por eso se escaparon: sin token devolvian tambien las preparaciones, los
+     * beneficios, los aportes y las epocas de las fichas BORRADOR y
+     * EN_REVISION.
+     *
+     * <h2>Por que la matriz y no la logica</h2>
+     * Aqui no hay un 404 que cuidar, al reves que en las rutas planas. Un
+     * listado no se pide por el id de nada, asi que cerrarlo no confirma que
+     * exista ningun registro concreto y el 401 del filtro no delata nada. Son
+     * listados administrativos: el catalogo publico no los llama, pinta el
+     * contenido de una especie con las rutas por padre, que siguen abiertas.
+     * <p>
+     * Van <strong>antes</strong> que {@link #CATALOGO_PUBLICO} en
+     * {@code authorizeHttpRequests}: gana la primera regla que coincide y los
+     * comodines de esa lista cubren estas cinco rutas. Quien pide el permiso es
+     * el {@code @PreAuthorize} de cada metodo; esta entrada es la que hace que
+     * al anonimo lo corte el filtro con un 401 en vez de dejarlo llegar.
+     *
+     * <h2>Lo que no entra aqui</h2>
+     * Los listados hermanos que si reciben el id del padre
+     * --{@code /api/preparaciones-consumo/parte/{id}} y
+     * {@code /api/aportes-nutricionales/especie-parte/{id}}-- se quedan
+     * publicos: ya preguntan por el estado de la ficha dentro del servicio.
+     */
+    private static final String[] LISTADOS_GLOBALES = {
+            "/api/preparaciones-consumo",
+            "/api/parte-beneficios",
+            "/api/parte-beneficios/activas",
+            "/api/aportes-nutricionales/nutriente/*",
+            "/api/epocas-cosecha"
     };
 
     /**
@@ -246,6 +300,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/usuarios/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/usuarios/recuperar-clave").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/usuarios/restablecer-clave").permitAll()
+                        // Recorte de los comodines de CATALOGO_PUBLICO: los
+                        // cinco listados globales quedan fuera de lo publico.
+                        // Tiene que ir antes del permitAll de abajo, porque
+                        // gana la primera regla que coincide.
+                        .requestMatchers(HttpMethod.GET, LISTADOS_GLOBALES).authenticated()
                         // Consulta del catalogo: abierta. Los verbos de
                         // escritura de esas mismas rutas caen en el
                         // anyRequest() de abajo.

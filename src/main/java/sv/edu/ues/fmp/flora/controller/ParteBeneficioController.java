@@ -22,16 +22,31 @@ import sv.edu.ues.fmp.flora.service.ParteBeneficioService;
 public class ParteBeneficioController {
     private final ParteBeneficioService parteBeneficioService;
 
-    @Operation(summary = "Listar todos los registros de parte beneficio", description = "Devuelve los registros activos e inactivos de parte beneficio.")
+    /**
+     * Listado administrativo: recorre los beneficios de las partes de todas
+     * las especies sin mirar el estado de ninguna ficha, asi que sin permiso
+     * mostraria los de los borradores. Igual que {@link #listarActivas()}.
+     */
+    @Operation(summary = "Listar todos los registros de parte beneficio",
+            description = "Requiere el permiso ESPECIE_CONSULTAR: es el listado global, incluye los registros de fichas sin publicar. "
+                    + "Devuelve los registros activos e inactivos de parte beneficio.")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
+    @ApiResponse(responseCode = "401", description = "Falta el token")
+    @ApiResponse(responseCode = "403", description = "El token no trae ESPECIE_CONSULTAR")
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping
     public ResponseEntity<List<ParteBeneficioResponse>> listarTodas() {
         return ResponseEntity.ok(parteBeneficioService.listarTodas());
     }
 
+    /** El mismo listado global que {@link #listarTodas()}, solo que filtrado por activa=true. */
     @Operation(summary = "Listar los registros activos de parte beneficio",
-            description = "Devuelve los registros de parte beneficio con activa=true, sin filtrar el estado de la parte, el beneficio o la fuente.")
+            description = "Requiere el permiso ESPECIE_CONSULTAR: es el listado global, incluye los registros de fichas sin publicar. "
+                    + "Devuelve los registros de parte beneficio con activa=true, sin filtrar el estado de la parte, el beneficio o la fuente.")
     @ApiResponse(responseCode = "200", description = "Listado obtenido")
+    @ApiResponse(responseCode = "401", description = "Falta el token")
+    @ApiResponse(responseCode = "403", description = "El token no trae ESPECIE_CONSULTAR")
+    @PreAuthorize("hasAuthority('ESPECIE_CONSULTAR')")
     @GetMapping("/activas")
     public ResponseEntity<List<ParteBeneficioResponse>> listarActivas() {
         return ResponseEntity.ok(parteBeneficioService.listarActivas());
