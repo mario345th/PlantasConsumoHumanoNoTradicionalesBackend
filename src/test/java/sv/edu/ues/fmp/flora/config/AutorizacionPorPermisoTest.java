@@ -50,6 +50,11 @@ import sv.edu.ues.fmp.flora.service.JwtService;
  * {@code hasAuthority(permiso)} y no sobre {@code hasRole}, asi que el nombre
  * del rol no deberia influir en ninguna respuesta. Si alguien cambiara un
  * {@code @PreAuthorize} a {@code hasRole}, estas pruebas se caerian.
+ * <p>
+ * Que CONSULTOR ya no exista en la tabla {@code rol} --lo quito {@code V12},
+ * que dejo solo ADMINISTRADOR e INVESTIGADOR-- es justamente la demostracion:
+ * el claim es texto que nadie contrasta contra la base, y estas pruebas
+ * siguieron pasando sin tocar una linea.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -121,7 +126,7 @@ class AutorizacionPorPermisoTest {
         return "Bearer " + token;
     }
 
-    /** El CONSULTOR del seed V9: autenticado, pero sin ningun permiso de gestion. */
+    /** Autenticado, pero sin ningun permiso de gestion: solo puede consultar. */
     private String tokenDeConsultor() {
         return tokenCon(ESPECIE_CONSULTAR);
     }
