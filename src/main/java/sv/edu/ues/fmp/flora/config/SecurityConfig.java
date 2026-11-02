@@ -3,6 +3,7 @@ package sv.edu.ues.fmp.flora.config;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,7 +18,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfigurationSource;
 
-import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.exception.AccesoDenegadoHandler;
 import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
 
@@ -124,7 +124,6 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  */
 @Configuration
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     /**
@@ -274,6 +273,42 @@ public class SecurityConfig {
     private final CorsConfigurationSource corsConfigurationSource;
     private final AutenticacionEntryPoint autenticacionEntryPoint;
     private final AccesoDenegadoHandler accesoDenegadoHandler;
+
+    /**
+     * Constructor escrito a mano, en vez del {@code @RequiredArgsConstructor}
+     * que usa el resto del proyecto, por el {@code @Qualifier} de abajo.
+     *
+     * <h2>Por que no basta anotar el campo</h2>
+     * Lombok no copia {@code @Qualifier} del campo al parametro del
+     * constructor: habria que declararlo en {@code lombok.copyableAnnotations}
+     * dentro de un {@code lombok.config}, que este proyecto no tiene. Y con
+     * inyeccion por constructor Spring lee las anotaciones del
+     * <strong>parametro</strong>, no las del campo, asi que un
+     * {@code @Qualifier} sobre el campo final no lo mira nadie: se compila, no
+     * avisa, y no hace nada.
+     *
+     * <h2>Que resuelve el qualifier</h2>
+     * En el contexto hay dos beans de tipo {@link CorsConfigurationSource}: el
+     * de {@link CorsConfig} y {@code mvcHandlerMappingIntrospector}, porque
+     * {@code HandlerMappingIntrospector} tambien implementa esa interfaz. Sin
+     * el qualifier la ambiguedad la deshacia la coincidencia entre el nombre
+     * del parametro y el del bean, que es exactamente lo que no debe sostener
+     * una decision de seguridad: al renombrar cualquiera de los dos, el CORS
+     * pasaria a salir del introspector de MVC sin un solo error. Con el
+     * qualifier, el bean se pide por su nombre y si no esta, el contexto no
+     * arranca.
+     */
+    public SecurityConfig(
+            JwtDecoder jwtDecoder,
+            @Qualifier("corsConfigurationSource") CorsConfigurationSource corsConfigurationSource,
+            AutenticacionEntryPoint autenticacionEntryPoint,
+            AccesoDenegadoHandler accesoDenegadoHandler) {
+
+        this.jwtDecoder = jwtDecoder;
+        this.corsConfigurationSource = corsConfigurationSource;
+        this.autenticacionEntryPoint = autenticacionEntryPoint;
+        this.accesoDenegadoHandler = accesoDenegadoHandler;
+    }
 
     @Bean
     public SecurityFilterChain filtroDeSeguridad(HttpSecurity http) throws Exception {

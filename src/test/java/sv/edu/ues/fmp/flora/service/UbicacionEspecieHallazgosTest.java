@@ -20,6 +20,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.repository.MunicipioRepository;
 import sv.edu.ues.fmp.flora.repository.MunicipioRepository.DepartamentoDeMunicipio;
 import sv.edu.ues.fmp.flora.repository.UbicacionEspecieRepository;
+import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
 import sv.edu.ues.fmp.flora.service.impl.UbicacionEspecieServiceImpl;
 
 import java.math.BigDecimal;
@@ -62,6 +63,16 @@ class UbicacionEspecieHallazgosTest {
 
     @Mock
     private MunicipioRepository municipioRepository;
+
+    /**
+     * El quinto colaborador del servicio. Lo agrego la rama de JWT para que las
+     * ubicaciones de una ficha sin publicar respondan 404; esta prueba venia de
+     * main, donde el campo no existia, y al combinar las dos ramas
+     * {@code @InjectMocks} le pasaba null al constructor que genera
+     * {@code @RequiredArgsConstructor}.
+     */
+    @Mock
+    private VisibilidadDeEspecie visibilidadDeEspecie;
 
     @InjectMocks
     private UbicacionEspecieServiceImpl service;
@@ -248,6 +259,11 @@ class UbicacionEspecieHallazgosTest {
 
     @Test
     void listarPorEspecie_resuelveLosDepartamentosEnUnaSolaConsulta() {
+        // La ficha se puede ver: lo que mide esta prueba es el numero de
+        // consultas, no la visibilidad. Sin este stub Mockito devuelve false
+        // --el valor por omision de boolean-- y el servicio contestaria el 404
+        // que corresponde a un borrador.
+        when(visibilidadDeEspecie.puedeVer(1L)).thenReturn(true);
         when(especieRepository.existsById(1L)).thenReturn(true);
         when(ubicacionEspecieRepository.findActivasPorEspecieConDistrito(1L))
                 .thenReturn(List.of(ubicacion(1L, true), ubicacion(2L, true)));
