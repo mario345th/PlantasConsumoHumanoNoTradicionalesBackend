@@ -1,13 +1,16 @@
 package sv.edu.ues.fmp.flora.controller;
 
+import java.net.URI;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +22,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import sv.edu.ues.fmp.flora.dto.request.VideoPreparacionRequest;
 import sv.edu.ues.fmp.flora.dto.response.VideoPreparacionResponse;
@@ -28,6 +32,7 @@ import sv.edu.ues.fmp.flora.service.VideoPreparacionService;
 @RestController
 @RequestMapping("/api/videos-preparacion")
 @RequiredArgsConstructor
+@Validated
 public class VideoPreparacionController {
 
     private final VideoPreparacionService videoPreparacionService;
@@ -50,6 +55,34 @@ public class VideoPreparacionController {
             @Parameter(description = "Si es true, excluye videos inactivos")
             @RequestParam(name = "soloActivos", defaultValue = "false") boolean soloActivos) {
         return ResponseEntity.ok(videoPreparacionService.listarPorPreparacion(idPreparacion, soloActivos));
+    }
+
+    /**
+     * Registrar un video bajo la ruta de esta clase.
+     * <p>
+     * QA reporto (VP-H01) que {@code /api/videos-preparacion} no exponia
+     * ningun POST aunque el servicio ya tenia {@code crear(idPreparacion,
+     * request)}: toda creacion respondia 405 y los datos de prueba hubo que
+     * insertarlos por SQL. La ruta anidada
+     * {@code /api/preparaciones-consumo/{idPreparacion}/videos} de
+     * {@link PreparacionVideoController} sigue siendo valida y llama al mismo
+     * metodo del servicio; esta es la que QA espera encontrar aqui.
+     */
+    @Operation(summary = "Registrar un video para una preparación de consumo",
+            description = "Recibe una URL HTTP(S) de video, no archivos binarios.")
+    @ApiResponse(responseCode = "201", description = "Video registrado exitosamente")
+    @ApiResponse(responseCode = "400", description = "Identificador o campos del video inválidos")
+    @ApiResponse(responseCode = "404", description = "La preparación de consumo no existe")
+    @ApiResponse(responseCode = "409", description = "La preparación está desactivada o el video ya está registrado")
+    @PostMapping("/preparacion/{idPreparacion}")
+    public ResponseEntity<VideoPreparacionResponse> crear(
+            @PathVariable @Positive(message = "El id de la preparación debe ser mayor que cero") Long idPreparacion,
+            @Valid @RequestBody VideoPreparacionRequest request) {
+
+        VideoPreparacionResponse creado = videoPreparacionService.crear(idPreparacion, request);
+        return ResponseEntity
+                .created(URI.create("/api/videos-preparacion/" + creado.getIdVideoPreparacion()))
+                .body(creado);
     }
 
     @Operation(summary = "Actualizar los datos de un video de preparación")

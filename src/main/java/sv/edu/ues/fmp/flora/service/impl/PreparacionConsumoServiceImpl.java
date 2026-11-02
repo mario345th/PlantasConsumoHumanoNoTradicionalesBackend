@@ -15,6 +15,7 @@ import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
 import sv.edu.ues.fmp.flora.repository.PreparacionConsumoRepository;
 import sv.edu.ues.fmp.flora.service.PreparacionConsumoService;
 import sv.edu.ues.fmp.flora.service.VisibilidadDeEspecie;
+import sv.edu.ues.fmp.flora.util.Textos;
 
 @Service
 @RequiredArgsConstructor
@@ -83,10 +84,8 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
     public PreparacionConsumoResponse crear(PreparacionConsumoRequest request) {
         EspecieParteComestible parte = buscarParte(request.getIdEspecieParte());
         verificarParteActiva(parte);
-        if (repository.existsByEspecieParteComestibleIdEspecieParteAndNombreIgnoreCase(
-                request.getIdEspecieParte(), request.getNombre())) {
-            throw duplicado();
-        }
+        verificarNombreLibre(request.getNombre(),
+                repository.findNombresPorParte(request.getIdEspecieParte()));
         return mapper.toResponse(repository.save(mapper.toEntity(request, parte)));
     }
 
@@ -99,10 +98,8 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
                 ? request.getActiva() : Boolean.TRUE.equals(entidad.getActiva());
         // Una preparacion inactiva puede corregirse sin reactivar su parte.
         if (activa) verificarParteActiva(parte);
-        if (repository.existsByEspecieParteComestibleIdEspecieParteAndNombreIgnoreCaseAndIdPreparacionNot(
-                request.getIdEspecieParte(), request.getNombre(), id)) {
-            throw duplicado();
-        }
+        verificarNombreLibre(request.getNombre(),
+                repository.findNombresPorParteExcluyendo(request.getIdEspecieParte(), id));
         mapper.updateEntity(entidad, request, parte);
         entidad.setActiva(activa);
         return mapper.toResponse(entidad);
@@ -135,6 +132,28 @@ public class PreparacionConsumoServiceImpl implements PreparacionConsumoService 
     private void validarId(Long id, String recurso) {
         if (id == null || id <= 0) {
             throw new IdInvalidoException("El id de " + recurso + " debe ser positivo");
+        }
+    }
+
+    /**
+     * Rechaza el nombre que ya existe en la misma parte comestible comparando
+     * sin acentos ni diferencias de espacios o mayusculas.
+     * <p>
+     * QA registro "Preparación QA" y "Preparacion QA" como dos preparaciones
+     * distintas. El alcance del duplicado no cambia (misma parte comestible,
+     * incluidas las inactivas); lo que cambia es que la comparacion ya no
+     * distingue por la tilde.
+     */
+    private void verificarNombreLibre(String nombre, List<String> nombresExistentes) {
+        String clave = Textos.claveComparacion(nombre);
+        if (clave == null) {
+            return;
+        }
+        boolean repetido = nombresExistentes.stream()
+                .map(Textos::claveComparacion)
+                .anyMatch(clave::equals);
+        if (repetido) {
+            throw duplicado();
         }
     }
 

@@ -148,13 +148,17 @@ public class ImagenPreparacionServiceImpl implements ImagenPreparacionService {
     @Override
     public ImagenPreparacionResponse marcarComoPrincipal(Long id) {
         ImagenPreparacion entidad = buscarOFallar(id);
+        // El estado de la preparacion se comprueba antes del atajo de
+        // idempotencia: con la preparacion inactiva el resto de operaciones ya
+        // se rechazaban, pero volver a marcar como principal una imagen que ya
+        // lo era respondia 200 (hallazgo IM-H01 del 3er informe de QA).
+        verificarPreparacionActiva(entidad.getPreparacion());
         verificarImagenActiva(entidad);
 
         if (Boolean.TRUE.equals(entidad.getEsPrincipal())) {
             return imagenPreparacionMapper.toResponse(entidad);
         }
 
-        verificarPreparacionActiva(entidad.getPreparacion());
         desmarcarPrincipalActual(entidad.getPreparacion().getIdPreparacion());
         entidad.setEsPrincipal(true);
 

@@ -129,11 +129,15 @@ public class ImagenEspecieServiceImpl implements ImagenEspecieService {
     @Override
     public ImagenEspecieResponse marcarComoPrincipal(Long id) {
         ImagenEspecie entidad = buscarOFallar(id);
+        // El estado de la especie se comprueba antes del atajo de
+        // idempotencia: con la especie inactiva el resto de operaciones ya se
+        // rechazaban, pero volver a marcar como principal una imagen que ya lo
+        // era respondia 200 (hallazgo IM-H01 del 3er informe de QA).
+        verificarEspecieActiva(entidad.getEspecie());
         verificarImagenActiva(entidad);
         if (Boolean.TRUE.equals(entidad.getEsPrincipal())) {
             return imagenEspecieMapper.toResponse(entidad);
         }
-        verificarEspecieActiva(entidad.getEspecie());
         desmarcarPrincipalActual(entidad.getEspecie().getIdEspecie());
         entidad.setEsPrincipal(true);
         return imagenEspecieMapper.toResponse(entidad);

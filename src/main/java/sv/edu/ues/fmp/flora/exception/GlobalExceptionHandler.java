@@ -1,6 +1,8 @@
 package sv.edu.ues.fmp.flora.exception;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -10,10 +12,12 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -24,8 +28,13 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.exc.InputCoercionException;
+import tools.jackson.databind.DatabindException;
 import tools.jackson.databind.exc.InvalidFormatException;
 import tools.jackson.databind.exc.InvalidNullException;
 import tools.jackson.databind.exc.MismatchedInputException;
@@ -369,6 +378,45 @@ public class GlobalExceptionHandler {
         Throwable causa = ex.getCause();
 
         /*
+         * Caso 0:
+         * Numero sintacticamente valido pero fuera del rango del tipo destino.
+         *
+         * Ejemplo:
+         * "idEspecie": 99999999999999999999
+         *
+         * QA observo (AN-H08) que esto respondia "El cuerpo de la solicitud no
+         * tiene un formato JSON valido", culpando al JSON de un problema que
+         * no era suyo: el JSON estaba bien formado, el valor no cabia en un
+         * long. Va antes que los demas casos porque Jackson envuelve la
+         * InputCoercionException dentro de una excepcion de databind que
+         * tambien encaja en los instanceof de abajo.
+         */
+        InputCoercionException fueraDeRango = buscarFueraDeRango(causa);
+        if (fueraDeRango != null) {
+
+            String campo = causa instanceof DatabindException error
+                    ? nombreDelCampo(error.getPath())
+                    : null;
+            if (campo == null) {
+                campo = campoDelParser(fueraDeRango);
+            }
+
+            mensaje = campo != null
+                    ? "El campo '" + campo + "' tiene un valor numérico fuera de rango"
+                    : "La solicitud contiene un valor numérico fuera de rango";
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(ErrorResponse.builder()
+                            .timestamp(LocalDateTime.now())
+                            .estado(HttpStatus.BAD_REQUEST.value())
+                            .error("Solicitud mal formada")
+                            .mensaje(mensaje)
+                            .ruta(request.getRequestURI())
+                            .build());
+        }
+
+        /*
          * Caso 1:
          * Enum inválido.
          *
@@ -380,7 +428,20 @@ public class GlobalExceptionHandler {
             String campo = nombreDelCampo(error.getPath());
             Class<?> tipo = error.getTargetType();
 
-            if (tipo != null && tipo.isEnum()) {
+            if (esFechaUHora(tipo)) {
+                /*
+                 * Fecha en un formato que no es el del contrato.
+                 *
+                 * Ejemplos: "15/10/2026" o "2026-10-15T10:30:00" en
+                 * fechaObservacion, que con @JsonFormat(pattern="yyyy-MM-dd")
+                 * y lectura no leniente ya no se aceptan. Antes el mensaje
+                 * decia solo "tipo de dato incorrecto", sin indicar el formato
+                 * esperado (AN-H10).
+                 */
+                mensaje = campo != null
+                        ? "El campo '" + campo + "' debe tener el formato yyyy-MM-dd"
+                        : "La fecha debe tener el formato yyyy-MM-dd";
+            } else if (tipo != null && tipo.isEnum()) {
 
                 String valoresPermitidos =
                         Arrays.stream(tipo.getEnumConstants())
@@ -527,6 +588,86 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * El cuerpo llega con un Content-Type que la ruta no sabe leer (por
+     * ejemplo {@code POST /api/especies/1/videos} con
+     * {@code Content-Type: text/plain}) -> 415 UNSUPPORTED MEDIA TYPE.
+     * <p>
+     * Mismo caso que {@link #manejarMetodoNoSoportado}: sin manejador propio
+     * la excepcion caia en {@link #manejarExcepcionNoAnticipada} y salia como
+     * 500 "Error interno", culpando al servidor de un error del cliente. Lo
+     * reporto QA en el 3er informe (modulo Video Especie, prueba del
+     * Content-Type no soportado).
+     * <p>
+     * El mensaje enumera los tipos que la ruta si acepta para que el cliente
+     * pueda corregir la llamada; si la excepcion no los trae, se nombra
+     * {@code application/json}, que es el unico formato que consume la API.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> manejarMediaTypeNoSoportado(
+            HttpMediaTypeNotSupportedException ex,
+            HttpServletRequest request) {
+
+        List<MediaType> soportados = ex.getSupportedMediaTypes();
+        String admitidos = soportados == null || soportados.isEmpty()
+                ? MediaType.APPLICATION_JSON_VALUE
+                : soportados.stream().map(MediaType::toString).collect(Collectors.joining(", "));
+
+        String recibido = ex.getContentType() != null
+                ? "'" + ex.getContentType() + "'"
+                : "el indicado";
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value())
+                .error("Tipo de contenido no soportado")
+                .mensaje("El tipo de contenido " + recibido
+                        + " no está soportado en esta ruta. Tipos admitidos: " + admitidos)
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(cuerpo);
+    }
+
+    /**
+     * Restricciones de Bean Validation sobre parametros de metodo
+     * ({@code @Positive} en un {@code @PathVariable} de un controlador
+     * {@code @Validated}) -> 400 BAD REQUEST.
+     * <p>
+     * Hermano de {@link #manejarErroresDeValidacion}, que solo atiende el
+     * {@code @Valid} del cuerpo: las violaciones de parametros llegan como
+     * {@link ConstraintViolationException} y sin este manejador acabarian en
+     * el catch-all como 500.
+     * <p>
+     * La ruta de la violacion viene como "metodo.parametro"; al cliente solo
+     * se le devuelve el ultimo tramo, que es el nombre del parametro.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> manejarViolacionesDeParametros(
+            ConstraintViolationException ex,
+            HttpServletRequest request) {
+
+        Map<String, String> erroresValidacion = new HashMap<>();
+
+        for (ConstraintViolation<?> violacion : ex.getConstraintViolations()) {
+            erroresValidacion.put(
+                    ultimoTramo(violacion.getPropertyPath().toString()),
+                    violacion.getMessage()
+            );
+        }
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.BAD_REQUEST.value())
+                .error("Error de validación")
+                .mensaje("La solicitud contiene parámetros inválidos")
+                .ruta(request.getRequestURI())
+                .erroresValidacion(erroresValidacion)
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(cuerpo);
+    }
+
+    /**
      * Red de seguridad final: cualquier excepcion que no coincida con ninguno
      * de los manejadores anteriores -> 500 INTERNAL SERVER ERROR.
      * <p>
@@ -618,6 +759,59 @@ public class GlobalExceptionHandler {
                 yield estado != null ? estado.getReasonPhrase() : "Error " + codigo;
             }
         };
+    }
+
+    /**
+     * Recorre la cadena de causas buscando el desbordamiento numerico.
+     * <p>
+     * Jackson lanza la {@link InputCoercionException} en la capa de parseo y
+     * la capa de databind la envuelve para poder adjuntar la ruta del campo,
+     * asi que no basta con mirar la causa directa.
+     */
+    private static InputCoercionException buscarFueraDeRango(Throwable causa) {
+        for (Throwable actual = causa; actual != null; actual = actual.getCause()) {
+            if (actual instanceof InputCoercionException error) {
+                return error;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Nombre del campo que estaba leyendo el parser cuando desbordo.
+     * <p>
+     * La {@link InputCoercionException} la lanza la capa de parseo, que no
+     * conoce el objeto que se esta poblando, asi que no trae la ruta de
+     * propiedades que si traen las excepciones de databind. Lo que si trae es
+     * el propio parser, detenido sobre el valor culpable: su campo actual es
+     * el que hay que nombrarle al cliente.
+     */
+    private static String campoDelParser(InputCoercionException ex) {
+        if (!(ex.processor() instanceof JsonParser parser)) {
+            return null;
+        }
+        try {
+            return parser.currentName();
+        } catch (Exception e) {
+            // El parser ya puede estar cerrado; el mensaje generico sirve igual.
+            return null;
+        }
+    }
+
+    /** Tipos de fecha/hora de java.time que la API recibe en los cuerpos. */
+    private static boolean esFechaUHora(Class<?> tipo) {
+        return tipo == LocalDate.class
+                || tipo == LocalDateTime.class
+                || tipo == LocalTime.class;
+    }
+
+    /**
+     * Ultimo tramo de una ruta de propiedad separada por puntos; para
+     * "crear.idPreparacion" devuelve "idPreparacion".
+     */
+    private static String ultimoTramo(String rutaDePropiedad) {
+        int ultimoPunto = rutaDePropiedad.lastIndexOf('.');
+        return ultimoPunto < 0 ? rutaDePropiedad : rutaDePropiedad.substring(ultimoPunto + 1);
     }
 
     /**

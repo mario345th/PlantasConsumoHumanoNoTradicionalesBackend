@@ -1,9 +1,11 @@
 package sv.edu.ues.fmp.flora.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import sv.edu.ues.fmp.flora.entity.Municipio;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,4 +40,30 @@ public interface MunicipioRepository extends JpaRepository<Municipio, Long> {
      * {@code municipio} ronda las 260 filas y no crece.
      */
     List<Municipio> findByNombreContainingIgnoreCase(String nombre);
+
+    /**
+     * Nombre del departamento al que pertenece cada municipio pedido.
+     * <p>
+     * {@code Distrito} guarda {@code id_municipio} como un Long suelto, sin
+     * {@code @ManyToOne}, asi que la cadena distrito -> municipio ->
+     * departamento no se puede recorrer con asociaciones JPA. Esta consulta
+     * cubre el salto que falta y resuelve el hallazgo AN-H05
+     * ({@code departamentoDistrito} llegaba siempre en null).
+     * <p>
+     * Recibe la coleccion completa de municipios de una pagina de resultados
+     * para resolverlos en una sola consulta en lugar de una por ubicacion.
+     */
+    @Query("""
+           select m.idMunicipio as idMunicipio, m.departamento.nombre as nombreDepartamento
+           from Municipio m
+           where m.idMunicipio in :idsMunicipio
+           """)
+    List<DepartamentoDeMunicipio> findDepartamentosPorMunicipio(Collection<Long> idsMunicipio);
+
+    /** Proyeccion de {@link #findDepartamentosPorMunicipio(Collection)}. */
+    interface DepartamentoDeMunicipio {
+        Long getIdMunicipio();
+
+        String getNombreDepartamento();
+    }
 }

@@ -42,11 +42,17 @@ public class JacksonConfig {
      * {@code /api/especies/qa} sigue dando el 400 de
      * {@code MethodArgumentTypeMismatchException} de siempre.
      * <p>
-     * Solo cubre los enteros ({@code Long}, {@code Integer}, {@code short}…).
-     * Un campo {@code BigDecimal} o {@code Double} es
-     * {@link LogicalType#Float} y sigue aceptando cadenas; en el proyecto no
-     * hay ninguno en un cuerpo de peticion, pero si se agrega habra que
-     * añadir aqui su bloque.
+     * Hacia {@link LogicalType#Float} se rechaza el texto y el booleano donde
+     * va un decimal. Es el bloque que anticipaba la nota de esta misma clase:
+     * los {@code BigDecimal} de {@code UbicacionEspecieRequest} hicieron que
+     * dejara de ser hipotetico. QA observo (AN-H09) que {@code "idEspecie":
+     * "3"} se rechazaba pero {@code "latitud": "13.66"} se aceptaba y se
+     * guardaba, con lo que dos campos numericos del mismo cuerpo se trataban
+     * distinto.
+     * <p>
+     * No se rechaza {@link CoercionInputShape#Integer} hacia Float: enviar
+     * {@code "latitud": 14} en lugar de {@code 14.0} es un entero que
+     * representa exactamente el mismo decimal, sin perdida ni ambiguedad.
      */
     @Bean
     public JsonMapperBuilderCustomizer coercionEstrictaCustomizer() {
@@ -59,6 +65,10 @@ public class JacksonConfig {
             builder.withCoercionConfig(LogicalType.Integer, config -> config
                     .setCoercion(CoercionInputShape.String, CoercionAction.Fail)
                     .setCoercion(CoercionInputShape.Float, CoercionAction.Fail));
+
+            builder.withCoercionConfig(LogicalType.Float, config -> config
+                    .setCoercion(CoercionInputShape.String, CoercionAction.Fail)
+                    .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail));
         };
     }
 }

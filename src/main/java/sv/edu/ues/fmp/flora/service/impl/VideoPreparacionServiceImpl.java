@@ -11,6 +11,7 @@ import sv.edu.ues.fmp.flora.dto.response.VideoPreparacionResponse;
 import sv.edu.ues.fmp.flora.entity.PreparacionConsumo;
 import sv.edu.ues.fmp.flora.entity.VideoPreparacion;
 import sv.edu.ues.fmp.flora.exception.EstadoInvalidoException;
+import sv.edu.ues.fmp.flora.exception.RecursoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.VideoPreparacionMapper;
 import sv.edu.ues.fmp.flora.repository.PreparacionConsumoRepository;
@@ -87,7 +88,11 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
         PreparacionConsumo preparacion = buscarPreparacionOFallar(idPreparacion);
         verificarPreparacionActiva(preparacion);
 
+        // Se mapea primero para comparar la URL ya normalizada por el mapper,
+        // que es la que acabara en la base.
         VideoPreparacion nuevo = videoPreparacionMapper.toEntity(request, preparacion);
+        verificarUrlNoDuplicada(idPreparacion, nuevo.getUrlVideo(), null);
+
         return videoPreparacionMapper.toResponse(videoPreparacionRepository.save(nuevo));
     }
 
@@ -95,6 +100,9 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
     public VideoPreparacionResponse actualizar(Long id, VideoPreparacionRequest request) {
         VideoPreparacion video = buscarOFallar(id);
         verificarPreparacionActiva(video.getPreparacion());
+        verificarVideoActivo(video);
+        verificarUrlNoDuplicada(video.getPreparacion().getIdPreparacion(),
+                normalizarUrl(request.getUrlVideo()), id);
 
         videoPreparacionMapper.updateEntity(video, request);
         return videoPreparacionMapper.toResponse(video);
@@ -104,7 +112,7 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
     public void desactivar(Long id) {
         VideoPreparacion video = buscarOFallar(id);
         if (!Boolean.TRUE.equals(video.getActivo())) {
-            return;
+            throw new EstadoInvalidoException("El video ya está desactivado.");
         }
         video.setActivo(false);
     }
@@ -113,7 +121,7 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
     public VideoPreparacionResponse activar(Long id) {
         VideoPreparacion video = buscarOFallar(id);
         if (Boolean.TRUE.equals(video.getActivo())) {
-            return videoPreparacionMapper.toResponse(video);
+            throw new EstadoInvalidoException("El video ya está activo.");
         }
 
         verificarPreparacionActiva(video.getPreparacion());
@@ -142,6 +150,47 @@ public class VideoPreparacionServiceImpl implements VideoPreparacionService {
                     "La preparación '" + preparacion.getNombre()
                             + "' está desactivada; no se pueden gestionar sus videos.");
         }
+    }
+
+    /**
+     * La baja logica tiene que proteger el registro: un video desactivado
+     * conserva su historial pero no se edita hasta reactivarlo (VP-H05).
+     */
+    private void verificarVideoActivo(VideoPreparacion video) {
+        if (!Boolean.TRUE.equals(video.getActivo())) {
+            throw new EstadoInvalidoException(
+                    "El video está desactivado; reactívelo antes de modificarlo.");
+        }
+    }
+
+    /**
+     * Rechaza repetir la URL de un video activo dentro de la misma
+     * preparacion (VP-H03). {@code idExcluido} es el propio registro cuando
+     * la comprobacion viene de una actualizacion, para que reenviar su misma
+     * URL no choque consigo mismo.
+     */
+    private void verificarUrlNoDuplicada(Long idPreparacion, String urlVideo, Long idExcluido) {
+        if (urlVideo == null) {
+            return;
+        }
+        boolean duplicada = idExcluido == null
+                ? videoPreparacionRepository
+                        .existsByPreparacionIdPreparacionAndUrlVideoAndActivoTrue(idPreparacion, urlVideo)
+                : videoPreparacionRepository
+                        .existsByPreparacionIdPreparacionAndUrlVideoAndActivoTrueAndIdVideoPreparacionNot(
+                                idPreparacion, urlVideo, idExcluido);
+        if (duplicada) {
+            throw new RecursoDuplicadoException("El video ya está registrado en esta preparación.");
+        }
+    }
+
+    /** Misma normalizacion que aplica el mapper antes de guardar. */
+    private String normalizarUrl(String urlVideo) {
+        if (urlVideo == null) {
+            return null;
+        }
+        String limpia = urlVideo.strip();
+        return limpia.isEmpty() ? null : limpia;
     }
 }
 

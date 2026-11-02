@@ -16,5 +16,21 @@ public interface VideoPreparacionRepository extends JpaRepository<VideoPreparaci
 
 
     List<VideoPreparacion> findByPreparacionIdPreparacionAndActivoTrueOrderByIdVideoPreparacionAsc(Long idPreparacion);
+
+
+    /**
+     * Comprueba si la preparacion ya tiene un video activo con esa URL, para
+     * rechazar el duplicado con 409 antes de llegar al indice unico parcial
+     * uk_video_preparacion_url_activa (hallazgo VP-H03).
+     * <p>
+     * Solo mira los activos, igual que el indice: un video dado de baja no
+     * bloquea volver a registrar la misma URL.
+     */
+    boolean existsByPreparacionIdPreparacionAndUrlVideoAndActivoTrue(Long idPreparacion, String urlVideo);
+
+
+    /** Igual que el anterior, pero ignorando el propio registro al actualizarlo. */
+    boolean existsByPreparacionIdPreparacionAndUrlVideoAndActivoTrueAndIdVideoPreparacionNot(
+            Long idPreparacion, String urlVideo, Long idVideoPreparacion);
 }
 

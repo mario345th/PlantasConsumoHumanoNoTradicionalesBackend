@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -82,5 +83,20 @@ public class UbicacionEspecieController {
     public ResponseEntity<Void> desactivarUbicacion(@PathVariable Long idUbicacion) {
         ubicacionEspecieService.desactivarUbicacion(idUbicacion);
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Reactivar ubicación (Revertir el borrado lógico)",
+            description = "Vuelve a mostrar una ubicación desactivada. No revalida los datos del "
+                    + "avistamiento (ya existían en la base), pero sí comprueba que ninguna otra "
+                    + "ubicación activa de la misma especie ocupe esas coordenadas")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Ubicación reactivada exitosamente"),
+            @ApiResponse(responseCode = "404", description = "Ubicación no encontrada"),
+            @ApiResponse(responseCode = "409", description = "La ubicación ya está activa, la especie está desactivada, u otra ubicación activa de la especie ya tiene esas coordenadas")
+    })
+    @PatchMapping("/{idUbicacion}/activar")
+    public ResponseEntity<UbicacionEspecieResponse> reactivarUbicacion(@PathVariable Long idUbicacion) {
+        UbicacionEspecieResponse response = ubicacionEspecieService.reactivarUbicacion(idUbicacion);
+        return ResponseEntity.ok(response);
     }
 }

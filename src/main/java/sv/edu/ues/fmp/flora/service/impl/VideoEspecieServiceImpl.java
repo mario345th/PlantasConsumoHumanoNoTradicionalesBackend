@@ -12,6 +12,7 @@ import sv.edu.ues.fmp.flora.entity.Especie;
 import sv.edu.ues.fmp.flora.entity.EspecieParteComestible;
 import sv.edu.ues.fmp.flora.entity.VideoEspecie;
 import sv.edu.ues.fmp.flora.exception.EstadoInvalidoException;
+import sv.edu.ues.fmp.flora.exception.RecursoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.VideoEspecieMapper;
 import sv.edu.ues.fmp.flora.repository.EspecieRepository;
@@ -72,8 +73,10 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
     public VideoEspecieResponse crear(Long idEspecie, VideoEspecieRequest request) {
         Especie especie = buscarEspecieActiva(idEspecie);
         EspecieParteComestible parte = resolverParte(idEspecie, request.getIdEspecieParte());
-        return videoEspecieMapper.toResponse(videoEspecieRepository.save(
-                videoEspecieMapper.toEntity(request, especie, parte)));
+        // Se mapea primero para comparar la URL ya normalizada por el mapper.
+        VideoEspecie nuevo = videoEspecieMapper.toEntity(request, especie, parte);
+        verificarUrlNoDuplicada(idEspecie, nuevo.getUrlVideo(), null);
+        return videoEspecieMapper.toResponse(videoEspecieRepository.save(nuevo));
     }
 
     @Override
@@ -81,7 +84,9 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
     public VideoEspecieResponse actualizar(Long id, VideoEspecieRequest request) {
         VideoEspecie video = buscarOFallar(id);
         buscarEspecieActiva(video.getEspecie().getIdEspecie());
+        verificarVideoActivo(video);
         Long idEspecie = video.getEspecie().getIdEspecie();
+        verificarUrlNoDuplicada(idEspecie, normalizarUrl(request.getUrlVideo()), id);
         EspecieParteComestible parte = resolverParte(idEspecie, request.getIdEspecieParte());
         videoEspecieMapper.updateEntity(video, request, parte);
         return videoEspecieMapper.toResponse(video);
@@ -90,14 +95,20 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
     @Override
     @Transactional
     public void desactivar(Long id) {
-        buscarOFallar(id).setActivo(false);
+        VideoEspecie video = buscarOFallar(id);
+        if (!Boolean.TRUE.equals(video.getActivo())) {
+            throw new EstadoInvalidoException("El video ya está desactivado.");
+        }
+        video.setActivo(false);
     }
 
     @Override
     @Transactional
     public VideoEspecieResponse activar(Long id) {
         VideoEspecie video = buscarOFallar(id);
-        if (Boolean.TRUE.equals(video.getActivo())) return videoEspecieMapper.toResponse(video);
+        if (Boolean.TRUE.equals(video.getActivo())) {
+            throw new EstadoInvalidoException("El video ya está activo.");
+        }
         buscarEspecieActiva(video.getEspecie().getIdEspecie());
         resolverParte(video.getEspecie().getIdEspecie(), video.getEspecieParte() == null
                 ? null : video.getEspecieParte().getIdEspecieParte());
@@ -128,6 +139,40 @@ public class VideoEspecieServiceImpl implements VideoEspecieService {
             throw new EstadoInvalidoException("La parte comestible " + idEspecieParte + " está desactivada.");
         }
         return parte;
+    }
+
+    /** Un video dado de baja conserva su historial pero no se edita hasta reactivarlo (VE-H01). */
+    private void verificarVideoActivo(VideoEspecie video) {
+        if (!Boolean.TRUE.equals(video.getActivo())) {
+            throw new EstadoInvalidoException(
+                    "El video está desactivado; reactívelo antes de modificarlo.");
+        }
+    }
+
+    /**
+     * Rechaza repetir la URL de un video activo dentro de la misma especie
+     * (VE-H03). {@code idExcluido} es el propio registro al actualizarlo.
+     */
+    private void verificarUrlNoDuplicada(Long idEspecie, String urlVideo, Long idExcluido) {
+        if (urlVideo == null) {
+            return;
+        }
+        boolean duplicada = idExcluido == null
+                ? videoEspecieRepository.existsByEspecieIdEspecieAndUrlVideoAndActivoTrue(idEspecie, urlVideo)
+                : videoEspecieRepository.existsByEspecieIdEspecieAndUrlVideoAndActivoTrueAndIdVideoNot(
+                        idEspecie, urlVideo, idExcluido);
+        if (duplicada) {
+            throw new RecursoDuplicadoException("El video ya está registrado en esta especie.");
+        }
+    }
+
+    /** Misma normalizacion que aplica el mapper antes de guardar. */
+    private String normalizarUrl(String urlVideo) {
+        if (urlVideo == null) {
+            return null;
+        }
+        String limpia = urlVideo.strip();
+        return limpia.isEmpty() ? null : limpia;
     }
 
     private VideoEspecie buscarOFallar(Long id) {
