@@ -1,3 +1,4 @@
+
 -- V11__indice_parcial_ubicacion_especie.sql
 -- Permite volver a registrar una ubicacion que fue dada de baja.
 -- Responde al hallazgo AN-H12 del 3er reporte de QA Testing: el UNIQUE
