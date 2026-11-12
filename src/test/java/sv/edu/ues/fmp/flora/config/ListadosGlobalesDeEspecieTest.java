@@ -5,9 +5,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
-import java.util.Optional;
 
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,9 +16,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import sv.edu.ues.fmp.flora.config.SiembraDeFichas.Ficha;
 import sv.edu.ues.fmp.flora.dto.response.UsuarioResponse;
-import sv.edu.ues.fmp.flora.entity.EspecieParteComestible;
-import sv.edu.ues.fmp.flora.repository.EspecieParteComestibleRepository;
+import sv.edu.ues.fmp.flora.entity.enums.EstadoPublicacion;
 import sv.edu.ues.fmp.flora.service.EmailService;
 import sv.edu.ues.fmp.flora.service.JwtService;
 
@@ -52,8 +52,12 @@ import sv.edu.ues.fmp.flora.service.JwtService;
  * Un listado contesta 200 con lista vacia, asi que no hace falta sembrar nada
  * para medir el guard. La unica excepcion es {@code GET /api/epocas-cosecha},
  * que exige el id de una parte comestible y responde 404 si no existe: esa
- * prueba busca una parte en la base y se salta cuando no hay ninguna, el mismo
- * criterio de {@link AutenticacionJwtTest}.
+ * prueba buscaba una parte en la base y se saltaba con
+ * {@code Assumptions.assumeTrue} cuando no habia ninguna, de modo que en una
+ * base limpia el 200 con ESPECIE_CONSULTAR no lo fijaba nadie. Ahora el
+ * {@code @BeforeEach} siembra una ficha completa con {@link SiembraDeFichas}
+ * --que trae su parte comestible y su epoca de cosecha-- y la prueba usa esa:
+ * corre siempre, con los datos que haya.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -93,10 +97,24 @@ class ListadosGlobalesDeEspecieTest {
     private JwtService jwtService;
 
     @Autowired
-    private EspecieParteComestibleRepository especieParteComestibleRepository;
+    private EntityManager entityManager;
 
     @MockitoBean
     private EmailService emailService;
+
+    /**
+     * La ficha que usa el listado de epocas. Se siembra PUBLICADA porque lo
+     * que mide la prueba es el guard de la ruta, no la visibilidad: con la
+     * ficha publicada el 200 no depende de que el servicio deje ver o no el
+     * contenido de una ficha en preparacion, que es lo que prueban
+     * {@link EspecieVisibilidadPublicaTest} y sus hermanas.
+     */
+    private Ficha ficha;
+
+    @BeforeEach
+    void sembrar() {
+        ficha = new SiembraDeFichas(entityManager).sembrar(EstadoPublicacion.PUBLICADA);
+    }
 
     private String tokenCon(String... permisos) {
         UsuarioResponse usuario = UsuarioResponse.builder()
@@ -109,11 +127,6 @@ class ListadosGlobalesDeEspecieTest {
                 .build();
 
         return "Bearer " + jwtService.emitir(usuario, List.of("CONSULTOR"), List.of(permisos)).token();
-    }
-
-    /** Una parte comestible cualquiera: el listado de epocas no corre sin una. */
-    private Optional<EspecieParteComestible> algunaParte() {
-        return especieParteComestibleRepository.findAll().stream().findFirst();
     }
 
     // ---------- El anonimo ya no llega ----------
@@ -171,19 +184,19 @@ class ListadosGlobalesDeEspecieTest {
 
     @Test
     void listadoDeEpocas_conEspecieConsultar_devuelve200() throws Exception {
-        Optional<EspecieParteComestible> parte = algunaParte();
-        Assumptions.assumeTrue(parte.isPresent(), "no hay partes comestibles en la base");
-
         mockMvc.perform(get(EPOCAS)
-                        .param("idEspecieParte", parte.get().getIdEspecieParte().toString())
+                        .param("idEspecieParte", ficha.parte().getIdEspecieParte().toString())
                         .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                // La parte sembrada trae una epoca de cosecha, asi que el 200
+                // no es el de la lista vacia: la ruta devolvio contenido.
+                .andExpect(jsonPath("$[0]").exists());
     }
 
     /**
-     * La misma afirmacion sin depender de lo que haya sembrado: con el permiso,
-     * una parte que no existe da 404 y no 403. El 404 sale del servicio, o sea
-     * que el guard dejo pasar; es el razonamiento de
+     * La misma afirmacion sin necesidad de ninguna fila: con el permiso, una
+     * parte que no existe da 404 y no 403. El 404 sale del servicio, o sea que
+     * el guard dejo pasar; es el razonamiento de
      * {@link AutorizacionPorPermisoTest}.
      */
     @Test

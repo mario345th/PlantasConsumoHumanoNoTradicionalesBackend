@@ -14,15 +14,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -33,16 +35,20 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 // En Spring Boot 4 las autoconfiguraciones de prueba se repartieron por
 // modulo: @AutoConfigureMockMvc ya no esta en
 // org.springframework.boot.test.autoconfigure.web.servlet sino aqui, en el
 // modulo spring-boot-webmvc-test.
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 
+import jakarta.persistence.EntityManager;
 import sv.edu.ues.fmp.flora.dto.response.RolResponse;
 import sv.edu.ues.fmp.flora.dto.response.UsuarioResponse;
+import sv.edu.ues.fmp.flora.entity.Rol;
 import sv.edu.ues.fmp.flora.entity.Usuario;
-import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
+import sv.edu.ues.fmp.flora.entity.UsuarioRol;
+import sv.edu.ues.fmp.flora.entity.enums.UsuarioRolId;
 import sv.edu.ues.fmp.flora.service.EmailService;
 import sv.edu.ues.fmp.flora.service.JwtService;
 import sv.edu.ues.fmp.flora.service.UsuarioRolService;
@@ -54,17 +60,24 @@ import sv.edu.ues.fmp.flora.service.UsuarioRolService;
  *
  * <h2>Por que no se prueba el login con usuario y clave</h2>
  * Casi todas las pruebas emiten el token directamente con {@link JwtService},
- * sin pasar por {@code POST /api/auth/login}. No es un atajo: ninguna
- * migracion siembra un usuario con clave conocida --{@code V3} quedo fuera
- * por el {@code baseline-version=3} de Flyway-- asi que una prueba que
- * dependiera de una clave en texto plano solo correria en la maquina de quien
- * la escribio. Lo que si depende de la clave ("clave correcta devuelve 200")
- * se verifico a mano contra la aplicacion corriendo.
- * <p>
- * Para la autenticacion da lo mismo: el filtro de Spring Security solo mira
- * la firma y la vigencia del token, no consulta la base para saber si el
- * usuario existe. Un token bien firmado entra aunque su {@code sub} no
- * corresponda a ninguna fila.
+ * sin pasar por {@code POST /api/auth/login}. Para la autenticacion da lo
+ * mismo: el filtro de Spring Security solo mira la firma y la vigencia del
+ * token, no consulta la base para saber si el usuario existe. Un token bien
+ * firmado entra aunque su {@code sub} no corresponda a ninguna fila. El
+ * recorrido completo con clave en texto plano lo cubre
+ * {@link FrenoDeLoginTest}, que siembra su propio usuario.
+ *
+ * <h2>Las dos pruebas que si necesitan filas las siembran</h2>
+ * {@code cambioDeClave_sobreSuPropioId...} necesita un usuario y
+ * {@code rolesDesactivados_noViajanEnElToken} uno con un rol dado de baja.
+ * Las dos buscaban el caso entre lo que hubiera en la base y, cuando no lo
+ * encontraban, se saltaban con {@code Assumptions.assumeTrue}: en una base
+ * limpia eran dos pruebas menos dentro de un BUILD SUCCESS que no delataba
+ * nada, el mismo problema que {@link SiembraDeFichas} resolvio para las de
+ * visibilidad. Ahora cada una siembra lo que necesita con el
+ * {@link EntityManager} y lleva {@code @Transactional} para que el rollback se
+ * lo lleve; el resto de la clase sigue sin tocar la base, asi que la
+ * anotacion va en esos dos metodos y no en la clase.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -101,10 +114,13 @@ class AutenticacionJwtTest {
     private JwtAuthenticationConverter convertidorDeAutoridades;
 
     @Autowired
-    private UsuarioRepository usuarioRepository;
+    private UsuarioRolService usuarioRolService;
 
     @Autowired
-    private UsuarioRolService usuarioRolService;
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private EntityManager entityManager;
 
     /**
      * El contexto completo arrastra el envio de correos de la recuperacion de
@@ -131,6 +147,77 @@ class AutenticacionJwtTest {
 
     private static String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    // ---------- Siembra de las dos pruebas que necesitan filas ----------
+
+    /**
+     * Distingue una siembra de otra. El correo y el nombre de usuario son
+     * unicos en la base, y el nombre del rol tambien: los indices no entienden
+     * de transacciones, asi que dos siembras con el mismo nombre chocarian
+     * entre si aunque las dos vayan a deshacerse.
+     */
+    private static final AtomicLong SECUENCIA = new AtomicLong();
+
+    /**
+     * Un usuario activo con la clave indicada, hasheada por el mismo
+     * {@link PasswordEncoder} de la aplicacion.
+     * <p>
+     * Con {@code persist} y {@code flush} en vez de un repositorio por el
+     * motivo que explica {@link SiembraDeFichas}: el {@code EntityManager} de
+     * la transaccion es el mismo que usan los repositorios por debajo, asi que
+     * la consulta del servicio ve lo sembrado, y basta una dependencia.
+     */
+    private Usuario sembrarUsuario(String clave) {
+        long n = SECUENCIA.incrementAndGet();
+
+        Usuario sembrado = Usuario.builder()
+                .nombres("Prueba")
+                .apellidos("Autenticacion")
+                .correo("prueba.autenticacion." + n + "@prueba.local")
+                .nombreUsuario("prueba.autenticacion." + n)
+                .claveHash(passwordEncoder.encode(clave))
+                .activo(true)
+                .build();
+
+        entityManager.persist(sembrado);
+        entityManager.flush();
+
+        return sembrado;
+    }
+
+    private Rol sembrarRol(boolean activo) {
+        long n = SECUENCIA.incrementAndGet();
+
+        Rol rol = Rol.builder()
+                .nombre((activo ? "PRUEBA_VIGENTE_" : "PRUEBA_DE_BAJA_") + n)
+                .descripcion("Rol sembrado por las pruebas de autenticación")
+                .activo(activo)
+                .build();
+
+        entityManager.persist(rol);
+
+        return rol;
+    }
+
+    /**
+     * Asigna el rol al usuario escribiendo la fila de {@code usuario_rol} a
+     * mano.
+     * <p>
+     * No pasa por {@code UsuarioRolService.asignar} a proposito: ese metodo
+     * rechaza con 409 los roles desactivados --{@code "No se puede asignar el
+     * rol X porque está desactivado"}-- y lo que esta prueba necesita es
+     * justamente la fila que quedo de cuando el rol todavia estaba vigente,
+     * que es el escenario real de un rol dado de baja despues de asignarlo.
+     */
+    private void asignar(Usuario usuario, Rol rol) {
+        entityManager.persist(UsuarioRol.builder()
+                .id(new UsuarioRolId(usuario.getIdUsuario(), rol.getIdRol()))
+                .usuario(usuario)
+                .rol(rol)
+                .build());
+
+        entityManager.flush();
     }
 
     // ---------- Contenido del token ----------
@@ -317,6 +404,69 @@ class AutenticacionJwtTest {
                 // viniera del filtro el mensaje seria el generico de falta de
                 // token y la ruta no habria llegado nunca al controlador.
                 .andExpect(jsonPath("$.mensaje").value("Usuario o clave incorrectos"));
+    }
+
+    /**
+     * H5: bajo {@code /api/auth} lo publico es el login y nada mas.
+     *
+     * <h2>Que fijaba esto y que fija ahora</h2>
+     * La matriz abria {@code /api/auth/**} con un comodin, asi que
+     * cualquier endpoint que naciera bajo ese prefijo --{@code GET
+     * /api/auth/me}, que devuelve la identidad de quien llama, o un refresh,
+     * que emite credenciales-- quedaba {@code permitAll} sin que nadie lo
+     * decidiera. Al acotarlo a {@code /api/auth/login} eso se arreglo, pero
+     * ninguna prueba lo sujetaba: devolver el comodin no rompia nada y el
+     * agujero volveria en silencio.
+     *
+     * <h2>Por que se mide con rutas que todavia no existen</h2>
+     * Dos son las que el {@code AuthController} tiene anotadas como
+     * pendientes --{@code me} y el refresh--, una es el cierre de sesion que
+     * pediria un token de verdad, y la cuarta es el prefijo pelado.
+     * Que no haya controlador no estorba, al contrario: la matriz de
+     * autorizacion se evalua en el filtro, antes de que Spring MVC busque un
+     * handler, asi que sin token la respuesta es el 401 de la matriz. El
+     * segundo tramo --con un token valido la misma ruta responde 404-- es lo
+     * que demuestra que el 401 lo puso la exigencia de credencial y no la
+     * ruta inexistente: con el comodin de vuelta, las dos respuestas serian
+     * 404 y la prueba se caeria en la primera.
+     * <p>
+     * Si algun dia uno de estos endpoints se implementa, el 404 pasara a ser
+     * la respuesta que le toque y habra que ajustar la lista; lo que no
+     * cambia es que sin token tiene que seguir dando 401.
+     */
+    @ParameterizedTest(name = "{0} no es publica")
+    @ValueSource(strings = {
+            "/api/auth",
+            "/api/auth/me",
+            "/api/auth/refresh",
+            "/api/auth/logout"
+    })
+    void bajoApiAuth_soloElLoginEsPublico(String hermanaDelLogin) throws Exception {
+        mockMvc.perform(get(hermanaDelLogin))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.estado").value(401))
+                .andExpect(jsonPath("$.ruta").value(hermanaDelLogin));
+
+        mockMvc.perform(get(hermanaDelLogin)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(List.of(), List.of()))))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * La otra mitad del recorte: lo que quedo publico es la <em>ruta</em> del
+     * login, no solo su {@code POST}.
+     * <p>
+     * Un {@code GET} al login responde 405 --el {@code @PostMapping} del
+     * controlador no admite el verbo-- y no 401. Es lo correcto en una ruta
+     * que no pide identidad, y es lo que distingue el recorte por ruta de un
+     * recorte por metodo: si alguien acotara el {@code permitAll} a
+     * {@code POST /api/auth/login}, esta respuesta pasaria a ser un 401 y la
+     * prueba lo cazaria.
+     */
+    @Test
+    void loginDeAuth_conOtroVerbo_responde405YNo401() throws Exception {
+        mockMvc.perform(get("/api/auth/login"))
+                .andExpect(status().isMethodNotAllowed());
     }
 
     /**
@@ -517,16 +667,15 @@ class AutenticacionJwtTest {
      * guard y llega a la logica de siempre, que rechaza la clave actual
      * equivocada con el 401 de {@code CredencialesInvalidasException}.
      * <p>
-     * Toma cualquier usuario de la base en vez de uno fijo: ninguna migracion
-     * siembra usuarios (ver el javadoc de la clase), asi que fijar un id
-     * concreto haria la prueba dependiente de la maquina.
+     * Siembra su usuario en vez de tomar el primero de la base --que es lo que
+     * hacia, saltandose con {@code assumeTrue} si no habia ninguno-- y le pone
+     * una clave que NO es la de {@link #CUERPO_CAMBIO_CLAVE}, para que el 401
+     * que se afirma sea el de la clave actual equivocada y no una casualidad.
      */
     @Test
+    @Transactional
     void cambioDeClave_sobreSuPropioId_atraviesaElGuardYLlegaALaValidacionDeClave() throws Exception {
-        Optional<Usuario> alguno = usuarioRepository.findAll().stream().findFirst();
-        Assumptions.assumeTrue(alguno.isPresent(), "no hay usuarios en la base");
-
-        Long idPropio = alguno.get().getIdUsuario();
+        Long idPropio = sembrarUsuario("LaDeVerdadDeEste1#").getIdUsuario();
 
         mockMvc.perform(put("/api/usuarios/" + idPropio + "/clave")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenDeUsuario(idPropio)))
@@ -543,25 +692,36 @@ class AutenticacionJwtTest {
      * de revocar lo que concedia, y meterlo en el token seria devolverselo al
      * usuario hasta que caduque.
      * <p>
-     * Depende de que exista en la base un usuario con al menos un rol dado de
-     * baja. Ninguna migracion lo siembra, asi que la prueba se salta cuando no
-     * lo encuentra en vez de fallar en la maquina de quien no lo tenga.
+     * El caso lo siembra la prueba --un usuario con dos roles asignados, uno
+     * vigente y uno dado de baja-- en vez de buscar en la base a alguien que
+     * lo tuviera y saltarse si no habia nadie. Asi corre siempre y, ademas,
+     * las dos listas son conocidas: se puede afirmar exactamente cual rol es
+     * el vigente y cual el revocado, cosa que con un usuario cualquiera de la
+     * base no se podia.
      */
     @Test
+    @Transactional
     void rolesDesactivados_noViajanEnElToken() {
-        Optional<Usuario> candidato = usuarioRepository.findAll().stream()
-                .filter(usuario -> !rolesInactivosDe(usuario.getIdUsuario()).isEmpty())
-                .findFirst();
+        Usuario sembrado = sembrarUsuario("NadieEntraConEste1#");
+        Rol vigente = sembrarRol(true);
+        Rol dadoDeBaja = sembrarRol(false);
+        asignar(sembrado, vigente);
+        asignar(sembrado, dadoDeBaja);
 
-        Assumptions.assumeTrue(candidato.isPresent(),
-                "no hay en la base ningun usuario con un rol dado de baja");
-
-        Long idUsuario = candidato.get().getIdUsuario();
+        Long idUsuario = sembrado.getIdUsuario();
         List<String> inactivos = rolesInactivosDe(idUsuario);
         List<String> vigentes = usuarioRolService.obtenerRolesDeUsuario(idUsuario, true)
                 .stream()
                 .map(RolResponse::getNombre)
                 .toList();
+
+        // La siembra quedo como se esperaba: el historico trae el rol revocado
+        // y lo vigente trae solo el otro. Sin esto, un fallo del filtro de
+        // soloActivos pasaria por una prueba verde con las dos listas vacias.
+        assertEquals(List.of(dadoDeBaja.getNombre()), inactivos,
+                "el historico del usuario sembrado debe traer el rol dado de baja");
+        assertEquals(List.of(vigente.getNombre()), vigentes,
+                "lo vigente debe ser solo el rol activo");
 
         UsuarioResponse usuario = usuarioDePrueba();
         String token = jwtService.emitir(usuario, vigentes, List.of()).token();

@@ -4,19 +4,24 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 import sv.edu.ues.fmp.flora.dto.response.UsuarioResponse;
@@ -118,6 +123,30 @@ class AutorizacionPorPermisoTest {
               "titulo": "Elaboración paso a paso de la receta",
               "urlVideo": "https://www.youtube.com/watch?v=mm106",
               "duracionSegundos": 180
+            }
+            """;
+
+    /** Mismo criterio para los otros tres cuerpos del modulo de multimedia. */
+    private static final String CUERPO_VIDEO_ESPECIE = """
+            {
+              "titulo": "La planta en su hábitat",
+              "urlVideo": "https://www.youtube.com/watch?v=especie",
+              "duracionSegundos": 120
+            }
+            """;
+
+    private static final String CUERPO_IMAGEN_ESPECIE = """
+            {
+              "tipoImagen": "PLANTA_COMPLETA",
+              "urlImagen": "https://ejemplo.com/imagenes/planta.jpg",
+              "textoAlternativo": "La planta completa vista de frente"
+            }
+            """;
+
+    private static final String CUERPO_IMAGEN_PREPARACION = """
+            {
+              "urlImagen": "https://ejemplo.com/imagenes/receta.jpg",
+              "textoAlternativo": "El platillo servido y listo para consumir"
             }
             """;
 
@@ -402,6 +431,155 @@ class AutorizacionPorPermisoTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(MULTIMEDIA_GESTIONAR)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CUERPO_VIDEO_PREPARACION))
+                .andExpect(status().isNotFound());
+    }
+
+    // ---------- MM-106 extendido: las diecinueve escrituras del modulo ----------
+
+    /**
+     * Una escritura del modulo de multimedia: el verbo, la ruta y el cuerpo
+     * que hay que mandarle, o {@code null} cuando el verbo no lleva cuerpo.
+     * <p>
+     * El {@code toString} es lo que JUnit pone como nombre de cada caso, para
+     * que el informe diga {@code PUT /api/videos-especie/999999} y no
+     * {@code [3] Escritura[verbo=PUT, ...]}: cuando una de estas pruebas se
+     * cae, lo primero que hace falta saber es que ruta se quedo sin guard.
+     */
+    private record Escritura(HttpMethod verbo, String ruta, String cuerpo) {
+
+        @Override
+        public String toString() {
+            return verbo.name() + " " + ruta;
+        }
+    }
+
+    /**
+     * Las diecinueve rutas de escritura de los ocho controladores de
+     * multimedia.
+     *
+     * <h2>Por que la lista entera y no una ruta de muestra</h2>
+     * MM-106 no fue un descuido de una ruta: fue que la matriz de
+     * {@link SecurityConfig} cierra las escrituras con
+     * {@code anyRequest().authenticated()} --cualquier token sirve-- y el
+     * permiso lo pone cada {@code @PreAuthorize} del controlador. Una
+     * anotacion que falte no la delata nada: la ruta responde 201 a quien
+     * traiga un token sin un solo permiso, que es exactamente lo que QA
+     * encontro en {@code POST /api/videos-preparacion/preparacion/{id}}.
+     * El codigo esta hoy en 8 de 8 controladores, pero solo dos rutas estaban
+     * fijadas por una prueba; las demas se podian perder en cualquier
+     * refactor.
+     * <p>
+     * Con la lista completa, quitar cualquiera de las diecinueve anotaciones
+     * cae el build: el caso sin permiso de esa ruta pasa de 403 a 404, porque
+     * la peticion ya llega al servicio.
+     *
+     * <h2>Lo que no entra</h2>
+     * Solo los verbos de escritura. Los {@code GET} del modulo siguen siendo
+     * publicos a proposito --son el catalogo-- y su visibilidad la prueban
+     * {@link EspecieSubRecursosVisibilidadTest} y
+     * {@link EspecieRutasPlanasVisibilidadTest}, que es otra cosa: ahi lo que
+     * se mide es el estado de la ficha de la que cuelga el contenido, no un
+     * permiso.
+     */
+    private static List<Escritura> escriturasDeMultimedia() {
+        return List.of(
+                // EspecieImagenController: POST anidado bajo la especie.
+                new Escritura(HttpMethod.POST,
+                        "/api/especies/" + ID_INEXISTENTE + "/imagenes", CUERPO_IMAGEN_ESPECIE),
+
+                // EspecieVideoController.
+                new Escritura(HttpMethod.POST,
+                        "/api/especies/" + ID_INEXISTENTE + "/videos", CUERPO_VIDEO_ESPECIE),
+
+                // ImagenEspecieController: la ruta plana de la imagen.
+                new Escritura(HttpMethod.PUT,
+                        "/api/imagenes-especie/" + ID_INEXISTENTE, CUERPO_IMAGEN_ESPECIE),
+                new Escritura(HttpMethod.DELETE,
+                        "/api/imagenes-especie/" + ID_INEXISTENTE, null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/imagenes-especie/" + ID_INEXISTENTE + "/activar", null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/imagenes-especie/" + ID_INEXISTENTE + "/marcar-principal", null),
+
+                // ImagenPreparacionController.
+                new Escritura(HttpMethod.PUT,
+                        "/api/imagenes-preparacion/" + ID_INEXISTENTE, CUERPO_IMAGEN_PREPARACION),
+                new Escritura(HttpMethod.DELETE,
+                        "/api/imagenes-preparacion/" + ID_INEXISTENTE, null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/imagenes-preparacion/" + ID_INEXISTENTE + "/activar", null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/imagenes-preparacion/" + ID_INEXISTENTE + "/marcar-principal", null),
+
+                // PreparacionImagenController.
+                new Escritura(HttpMethod.POST,
+                        "/api/preparaciones-consumo/" + ID_INEXISTENTE + "/imagenes",
+                        CUERPO_IMAGEN_PREPARACION),
+
+                // PreparacionVideoController: la ruta anidada que si cortaba
+                // cuando la plana de MM-106 no lo hacia.
+                new Escritura(HttpMethod.POST,
+                        "/api/preparaciones-consumo/" + ID_INEXISTENTE + "/videos",
+                        CUERPO_VIDEO_PREPARACION),
+
+                // VideoEspecieController.
+                new Escritura(HttpMethod.PUT,
+                        "/api/videos-especie/" + ID_INEXISTENTE, CUERPO_VIDEO_ESPECIE),
+                new Escritura(HttpMethod.DELETE,
+                        "/api/videos-especie/" + ID_INEXISTENTE, null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/videos-especie/" + ID_INEXISTENTE + "/activar", null),
+
+                // VideoPreparacionController, el del hallazgo. El POST va
+                // tambien aqui, aunque las dos pruebas de arriba ya lo fijen
+                // con su nombre y su explicacion: la lista tiene que ser las
+                // diecinueve rutas, no las diecinueve menos la que se recuerda
+                // a mano.
+                new Escritura(HttpMethod.POST,
+                        "/api/videos-preparacion/preparacion/" + ID_INEXISTENTE,
+                        CUERPO_VIDEO_PREPARACION),
+                new Escritura(HttpMethod.PUT,
+                        "/api/videos-preparacion/" + ID_INEXISTENTE, CUERPO_VIDEO_PREPARACION),
+                new Escritura(HttpMethod.DELETE,
+                        "/api/videos-preparacion/" + ID_INEXISTENTE, null),
+                new Escritura(HttpMethod.PATCH,
+                        "/api/videos-preparacion/" + ID_INEXISTENTE + "/activar", null));
+    }
+
+    /** La peticion de una {@link Escritura} con el token que se le pase. */
+    private static MockHttpServletRequestBuilder peticionDe(Escritura escritura, String token) {
+        MockHttpServletRequestBuilder peticion = request(escritura.verbo(), escritura.ruta())
+                .header(HttpHeaders.AUTHORIZATION, bearer(token));
+
+        return escritura.cuerpo() == null
+                ? peticion
+                : peticion.contentType(MediaType.APPLICATION_JSON).content(escritura.cuerpo());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("escriturasDeMultimedia")
+    void escriturasDeMultimedia_sinMultimediaGestionar_devuelven403(Escritura escritura)
+            throws Exception {
+
+        mockMvc.perform(peticionDe(escritura, tokenDeConsultor()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.estado").value(403));
+    }
+
+    /**
+     * El contrapunto obligado: con el permiso, la misma peticion llega al
+     * servicio y recibe el 404 del id inexistente.
+     * <p>
+     * Sin esta mitad, un {@code @PreAuthorize} con el permiso equivocado --o
+     * una ruta cerrada de mas-- daria 403 siempre y la prueba de arriba
+     * pasaria igual.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("escriturasDeMultimedia")
+    void escriturasDeMultimedia_conMultimediaGestionar_atraviesanElGuard(Escritura escritura)
+            throws Exception {
+
+        mockMvc.perform(peticionDe(escritura, tokenCon(MULTIMEDIA_GESTIONAR)))
                 .andExpect(status().isNotFound());
     }
 

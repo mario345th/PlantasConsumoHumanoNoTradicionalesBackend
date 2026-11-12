@@ -5,9 +5,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,19 +31,32 @@ import sv.edu.ues.fmp.flora.service.EmailService;
  * <h2>Cada prueba arranca con el contador limpio</h2>
  * El freno es un singleton con un mapa en memoria que vive mientras viva el
  * contexto de Spring, asi que lo que una prueba acumula lo verian las
- * siguientes: sin limpiar, dejar bloqueado a {@code admin.demo} en una prueba
+ * siguientes: sin limpiar, dejar bloqueado un identificador en una prueba
  * haria fallar con 429 a la de al lado, y el resultado dependeria del orden en
  * que JUnit decidiera ejecutarlas. El {@code @BeforeEach} borra los
  * identificadores que usa la clase con {@code registrarExito}, que es la
  * operacion publica que reinicia el contador.
  *
- * <h2>Las que necesitan una clave correcta se saltan si no hay usuario</h2>
+ * <h2>El usuario con clave conocida lo siembra la propia prueba</h2>
  * Comprobar que el bloqueo responde 429 incluso con la clave buena, y que un
- * exito reinicia el contador, pide un usuario con clave conocida. La
- * migracion {@code V9} siembra {@code admin.demo} con la clave
- * {@code Demo2026#}, pero la prueba no lo da por hecho: lo busca, verifica el
- * hash con el mismo {@code PasswordEncoder} de la aplicacion y se salta si no
- * cuadra, igual que {@link AutenticacionJwtTest} con los usuarios.
+ * exito reinicia el contador, pide un usuario con clave conocida. Antes se
+ * tomaba {@code admin.demo} de la migracion {@code V9} y, cuando no cuadraba
+ * --base recien creada, o recargada como hizo {@code V14} con el catalogo--,
+ * las cinco pruebas que lo necesitan se saltaban con
+ * {@code Assumptions.assumeTrue}: cinco pruebas menos, dos de ellas la red de
+ * SEG-H07, dentro de un BUILD SUCCESS que no delataba nada. Es el mismo
+ * problema que {@link SiembraDeFichas} resolvio para las de visibilidad.
+ * <p>
+ * Ahora cada prueba siembra su propio usuario en el {@code @BeforeEach}, con
+ * la clave hasheada por el mismo {@link PasswordEncoder} de la aplicacion: las
+ * nueve corren siempre, con los datos que haya en la base. La siembra vive en
+ * la transaccion de la prueba y el rollback se la lleva, asi que no queda
+ * residuo; el nombre de usuario y el correo llevan un numero de secuencia
+ * porque son unicos en la base y dos siembras chocarian entre si.
+ * <p>
+ * De paso el contador queda mas aislado que antes: cada prueba estrena
+ * {@code id_usuario}, asi que no hay forma de que lo que una acumule lo vea la
+ * siguiente.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -59,8 +71,15 @@ class FrenoDeLoginTest {
     /** El default de app.login.max-intentos, que no se declara en properties. */
     private static final int MAX_INTENTOS = 5;
 
-    private static final String USUARIO_SEMBRADO = "admin.demo";
-    private static final String CLAVE_SEMBRADA = "Demo2026#";
+    /** La clave que la prueba le pone al usuario que siembra. */
+    private static final String CLAVE_SEMBRADA = "Freno2026#";
+
+    /**
+     * Distingue el usuario de una prueba del de la siguiente: el correo y el
+     * nombre de usuario son unicos en la base, y los indices no entienden de
+     * transacciones.
+     */
+    private static final AtomicLong SECUENCIA = new AtomicLong();
 
     @Autowired
     private MockMvc mockMvc;
@@ -82,9 +101,9 @@ class FrenoDeLoginTest {
      * de cada prueba.
      * <p>
      * Ninguno existe en la base, asi que el freno los cuenta como texto sin
-     * resolver y se limpian con {@link Cuenta#noResuelta(String)}.
-     * {@code admin.demo} no esta en esta lista precisamente porque si existe:
-     * sus intentos van por id y se limpian abajo, con
+     * resolver y se limpian con {@link Cuenta#noResuelta(String)}. El usuario
+     * sembrado no esta en esta lista precisamente porque si existe: sus
+     * intentos van por id y se limpian abajo, con
      * {@link Cuenta#deUsuario(Long)}.
      */
     private static final List<String> IDENTIFICADORES_INVENTADOS = List.of(
@@ -94,8 +113,31 @@ class FrenoDeLoginTest {
             "no.existe.freno.aislado",
             "no.existe.freno.vecino");
 
+    /**
+     * El usuario de esta prueba, con {@link #CLAVE_SEMBRADA} por clave. Lo
+     * siembra {@link #sembrarUsuarioYLimpiarContadores()} y el rollback de
+     * {@code @Transactional} se lo lleva al terminar.
+     */
+    private Usuario usuario;
+
     @BeforeEach
-    void limpiarContadores() {
+    void sembrarUsuarioYLimpiarContadores() {
+        long n = SECUENCIA.incrementAndGet();
+
+        // saveAndFlush y no save: la peticion que viene despues resuelve la
+        // cuenta con una consulta, y sin el flush la insercion seguiria en la
+        // cola de Hibernate.
+        usuario = usuarioRepository.saveAndFlush(Usuario.builder()
+                .nombres("Freno")
+                .apellidos("De Login")
+                .correo("freno.login." + n + "@prueba.local")
+                .nombreUsuario("freno.login." + n)
+                // El mismo encoder de la aplicacion, para que la clave en
+                // texto plano de arriba sea de verdad la de este usuario.
+                .claveHash(passwordEncoder.encode(CLAVE_SEMBRADA))
+                .activo(true)
+                .build());
+
         IDENTIFICADORES_INVENTADOS.forEach(
                 identificador -> controlDeIntentosDeLogin.registrarExito(
                         Cuenta.noResuelta(identificador)));
@@ -103,8 +145,7 @@ class FrenoDeLoginTest {
         // Una sola llamada basta para el usuario sembrado, aunque las pruebas
         // entren unas por el nombre de usuario y otras por el correo: desde
         // SEG-H07 las dos formas cuentan contra el mismo id.
-        usuarioConClaveConocida().ifPresent(usuario -> controlDeIntentosDeLogin
-                .registrarExito(Cuenta.deUsuario(usuario.getIdUsuario())));
+        controlDeIntentosDeLogin.registrarExito(Cuenta.deUsuario(usuario.getIdUsuario()));
     }
 
     private static String cuerpo(String usuario, String clave) {
@@ -129,12 +170,13 @@ class FrenoDeLoginTest {
         }
     }
 
-    /** Devuelve el usuario sembrado si existe y su clave es la esperada. */
-    private Optional<Usuario> usuarioConClaveConocida() {
-        return usuarioRepository
-                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(USUARIO_SEMBRADO, USUARIO_SEMBRADO)
-                .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
-                .filter(usuario -> passwordEncoder.matches(CLAVE_SEMBRADA, usuario.getClaveHash()));
+    /** Las dos formas de escribir la cuenta sembrada; las dos valen para entrar. */
+    private String nombreDeUsuario() {
+        return usuario.getNombreUsuario();
+    }
+
+    private String correo() {
+        return usuario.getCorreo();
     }
 
     // ---------- El bloqueo ----------
@@ -218,14 +260,11 @@ class FrenoDeLoginTest {
      */
     @Test
     void duranteElBloqueo_laClaveCorrectaTambienRecibe429() throws Exception {
-        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
-                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
-
-        agotarIntentos(LOGIN_NUEVO, USUARIO_SEMBRADO);
+        agotarIntentos(LOGIN_NUEVO, nombreDeUsuario());
 
         mockMvc.perform(post(LOGIN_NUEVO)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                        .content(cuerpo(nombreDeUsuario(), CLAVE_SEMBRADA)))
                 .andExpect(status().isTooManyRequests());
     }
 
@@ -234,13 +273,12 @@ class FrenoDeLoginTest {
      * escribir la misma cuenta.
      *
      * <h2>Que media antes y que mide ahora</h2>
-     * El contador iba por el texto que se escribia, asi que
-     * {@code admin.demo} y {@code admin.demo@...} eran dos contadores
-     * distintos: agotados los cinco intentos con el nombre de usuario, el
-     * correo de la MISMA cuenta tenia otros cinco y la respuesta era el 401 de
-     * credenciales. Ahora el login resuelve la cuenta antes de contar, los dos
-     * caminos llegan al mismo {@code id_usuario} y el segundo intento ya sale
-     * bloqueado.
+     * El contador iba por el texto que se escribia, asi que el nombre de
+     * usuario y el correo eran dos contadores distintos: agotados los cinco
+     * intentos con el nombre de usuario, el correo de la MISMA cuenta tenia
+     * otros cinco y la respuesta era el 401 de credenciales. Ahora el login
+     * resuelve la cuenta antes de contar, los dos caminos llegan al mismo
+     * {@code id_usuario} y el segundo intento ya sale bloqueado.
      * <p>
      * El segundo intento va con la clave CORRECTA a proposito: si respondiera
      * 200 el bloqueo no serviria de nada, y ademas demuestra que el 429 no es
@@ -248,16 +286,11 @@ class FrenoDeLoginTest {
      */
     @Test
     void elBloqueoPorNombreDeUsuario_tambienAlcanzaAlCorreoDeLaMismaCuenta() throws Exception {
-        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
-                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
-
-        String correo = usuarioConClaveConocida().get().getCorreo();
-
-        agotarIntentos(LOGIN_NUEVO, USUARIO_SEMBRADO);
+        agotarIntentos(LOGIN_NUEVO, nombreDeUsuario());
 
         mockMvc.perform(post(LOGIN_NUEVO)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo(correo, CLAVE_SEMBRADA)))
+                        .content(cuerpo(correo(), CLAVE_SEMBRADA)))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.estado").value(429));
     }
@@ -265,16 +298,11 @@ class FrenoDeLoginTest {
     /** Y al reves: agotarlos con el correo tambien bloquea el nombre de usuario. */
     @Test
     void elBloqueoPorCorreo_tambienAlcanzaAlNombreDeUsuario() throws Exception {
-        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
-                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
-
-        String correo = usuarioConClaveConocida().get().getCorreo();
-
-        agotarIntentos(LOGIN_NUEVO, correo);
+        agotarIntentos(LOGIN_NUEVO, correo());
 
         mockMvc.perform(post(LOGIN_NUEVO)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                        .content(cuerpo(nombreDeUsuario(), CLAVE_SEMBRADA)))
                 .andExpect(status().isTooManyRequests());
     }
 
@@ -284,19 +312,14 @@ class FrenoDeLoginTest {
      */
     @Test
     void unExitoAntesDelLimite_reiniciaElContador() throws Exception {
-        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
-                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
-
-        String correo = usuarioConClaveConocida().get().getCorreo();
-
         for (int i = 0; i < MAX_INTENTOS - 1; i++) {
             org.junit.jupiter.api.Assertions.assertEquals(401,
-                    intentar(LOGIN_NUEVO, correo, "Equivocada" + i + "#"));
+                    intentar(LOGIN_NUEVO, correo(), "Equivocada" + i + "#"));
         }
 
         mockMvc.perform(post(LOGIN_NUEVO)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo(correo, CLAVE_SEMBRADA)))
+                        .content(cuerpo(correo(), CLAVE_SEMBRADA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").exists());
 
@@ -304,7 +327,7 @@ class FrenoDeLoginTest {
         // estos cuatro fallos no bloquean.
         for (int i = 0; i < MAX_INTENTOS - 1; i++) {
             org.junit.jupiter.api.Assertions.assertEquals(401,
-                    intentar(LOGIN_NUEVO, correo, "OtraEquivocada" + i + "#"));
+                    intentar(LOGIN_NUEVO, correo(), "OtraEquivocada" + i + "#"));
         }
     }
 
@@ -316,14 +339,11 @@ class FrenoDeLoginTest {
      */
     @Test
     void loginViejo_deprecadoPeroNoRoto() throws Exception {
-        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
-                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
-
         mockMvc.perform(post(LOGIN_VIEJO)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                        .content(cuerpo(nombreDeUsuario(), CLAVE_SEMBRADA)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.nombreUsuario").value(USUARIO_SEMBRADO))
+                .andExpect(jsonPath("$.nombreUsuario").value(nombreDeUsuario()))
                 // Sigue sin emitir token: es lo que lo hace insuficiente y la
                 // razon de que haya que retirarlo.
                 .andExpect(jsonPath("$.token").doesNotExist())
