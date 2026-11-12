@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import sv.edu.ues.fmp.flora.entity.Usuario;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
 import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin;
+import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin.Cuenta;
 import sv.edu.ues.fmp.flora.service.EmailService;
 
 /**
@@ -76,20 +77,34 @@ class FrenoDeLoginTest {
     @MockitoBean
     private EmailService emailService;
 
-    /** Identificadores que usa la clase, para dejarlos limpios antes de cada prueba. */
-    private static final List<String> IDENTIFICADORES = List.of(
+    /**
+     * Identificadores inventados que usa la clase, para dejarlos limpios antes
+     * de cada prueba.
+     * <p>
+     * Ninguno existe en la base, asi que el freno los cuenta como texto sin
+     * resolver y se limpian con {@link Cuenta#noResuelta(String)}.
+     * {@code admin.demo} no esta en esta lista precisamente porque si existe:
+     * sus intentos van por id y se limpian abajo, con
+     * {@link Cuenta#deUsuario(Long)}.
+     */
+    private static final List<String> IDENTIFICADORES_INVENTADOS = List.of(
             "no.existe.freno.auth",
             "no.existe.freno.viejo",
             "no.existe.freno.compartido",
             "no.existe.freno.aislado",
-            "no.existe.freno.vecino",
-            USUARIO_SEMBRADO);
+            "no.existe.freno.vecino");
 
     @BeforeEach
     void limpiarContadores() {
-        IDENTIFICADORES.forEach(controlDeIntentosDeLogin::registrarExito);
-        usuarioConClaveConocida()
-                .ifPresent(usuario -> controlDeIntentosDeLogin.registrarExito(usuario.getCorreo()));
+        IDENTIFICADORES_INVENTADOS.forEach(
+                identificador -> controlDeIntentosDeLogin.registrarExito(
+                        Cuenta.noResuelta(identificador)));
+
+        // Una sola llamada basta para el usuario sembrado, aunque las pruebas
+        // entren unas por el nombre de usuario y otras por el correo: desde
+        // SEG-H07 las dos formas cuentan contra el mismo id.
+        usuarioConClaveConocida().ifPresent(usuario -> controlDeIntentosDeLogin
+                .registrarExito(Cuenta.deUsuario(usuario.getIdUsuario())));
     }
 
     private static String cuerpo(String usuario, String clave) {
@@ -207,6 +222,55 @@ class FrenoDeLoginTest {
                 "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
 
         agotarIntentos(LOGIN_NUEVO, USUARIO_SEMBRADO);
+
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(USUARIO_SEMBRADO, CLAVE_SEMBRADA)))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    /**
+     * SEG-H07, el hallazgo: el bloqueo no se esquiva cambiando de forma de
+     * escribir la misma cuenta.
+     *
+     * <h2>Que media antes y que mide ahora</h2>
+     * El contador iba por el texto que se escribia, asi que
+     * {@code admin.demo} y {@code admin.demo@...} eran dos contadores
+     * distintos: agotados los cinco intentos con el nombre de usuario, el
+     * correo de la MISMA cuenta tenia otros cinco y la respuesta era el 401 de
+     * credenciales. Ahora el login resuelve la cuenta antes de contar, los dos
+     * caminos llegan al mismo {@code id_usuario} y el segundo intento ya sale
+     * bloqueado.
+     * <p>
+     * El segundo intento va con la clave CORRECTA a proposito: si respondiera
+     * 200 el bloqueo no serviria de nada, y ademas demuestra que el 429 no es
+     * un 401 disfrazado.
+     */
+    @Test
+    void elBloqueoPorNombreDeUsuario_tambienAlcanzaAlCorreoDeLaMismaCuenta() throws Exception {
+        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
+                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
+
+        String correo = usuarioConClaveConocida().get().getCorreo();
+
+        agotarIntentos(LOGIN_NUEVO, USUARIO_SEMBRADO);
+
+        mockMvc.perform(post(LOGIN_NUEVO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(correo, CLAVE_SEMBRADA)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.estado").value(429));
+    }
+
+    /** Y al reves: agotarlos con el correo tambien bloquea el nombre de usuario. */
+    @Test
+    void elBloqueoPorCorreo_tambienAlcanzaAlNombreDeUsuario() throws Exception {
+        Assumptions.assumeTrue(usuarioConClaveConocida().isPresent(),
+                "no hay en la base un " + USUARIO_SEMBRADO + " con la clave esperada");
+
+        String correo = usuarioConClaveConocida().get().getCorreo();
+
+        agotarIntentos(LOGIN_NUEVO, correo);
 
         mockMvc.perform(post(LOGIN_NUEVO)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -16,6 +16,7 @@ import sv.edu.ues.fmp.flora.exception.RecursoDuplicadoException;
 import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.RolMapper;
 import sv.edu.ues.fmp.flora.repository.RolRepository;
+import sv.edu.ues.fmp.flora.service.ProteccionDeAdministracion;
 import sv.edu.ues.fmp.flora.service.RolService;
 import sv.edu.ues.fmp.flora.util.Paginacion;
 
@@ -25,6 +26,14 @@ public class RolServiceImpl implements RolService {
 
     private final RolRepository rolRepository;
     private final RolMapper rolMapper;
+
+    /**
+     * El invariante de SEG-H09 sobre el rol ADMINISTRADOR. Aqui solo se le
+     * pregunta por la baja del rol: el catalogo de roles no tiene usuario
+     * objetivo, asi que las reglas de autoproteccion y de "quien llama" no
+     * entran. Ver {@code ProteccionDeAdministracion.verificarDesactivacionDeRol}.
+     */
+    private final ProteccionDeAdministracion proteccionDeAdministracion;
 
     @Override
     @Transactional(readOnly = true)
@@ -79,6 +88,14 @@ public class RolServiceImpl implements RolService {
     @Transactional
     public void desactivar(Long id) {
         Rol entidad = buscarOFallar(id);
+
+        // SEG-H09 R5: dar de baja el rol ADMINISTRADOR lo deja sin efecto para
+        // todos los que lo tienen asignado, asi que es otra via --la sexta-- a
+        // un sistema sin administradores activos. Va despues de resolver la
+        // entidad: un id que no existe sigue siendo 404, igual que en la baja
+        // de usuario. Para cualquier otro rol no hace nada.
+        proteccionDeAdministracion.verificarDesactivacionDeRol(entidad);
+
         entidad.setActivo(false);
     }
 

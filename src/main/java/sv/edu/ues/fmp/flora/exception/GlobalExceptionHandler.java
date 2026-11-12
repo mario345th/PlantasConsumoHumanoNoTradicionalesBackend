@@ -249,6 +249,43 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Una regla de negocio no deja hacer esta operación sobre este usuario
+     * (SEG-H09) -> 403 FORBIDDEN.
+     * <p>
+     * Es el hermano de {@link #manejarAccesoDenegado} con una diferencia
+     * deliberada: aquí sí viaja el mensaje. El 403 de method-security lo recibe
+     * cualquiera que tantee un endpoint y por eso es mudo; este otro solo lo
+     * recibe quien ya pasó el {@code @PreAuthorize} del módulo de seguridad, o
+     * sea quien trae {@code USUARIO_GESTIONAR} y con él ya puede listar
+     * usuarios y leer sus roles. Decirle por qué se le negó --es el
+     * superadministrador, es él mismo, hace falta ser superadmin-- no le revela
+     * nada que no pueda consultar, y es la diferencia entre una pantalla que
+     * explica y una que solo dice 403.
+     * <p>
+     * El código es 403 y no 409 porque lo que falla es la autorización, no el
+     * estado de los datos: el único bloqueo de SEG-H09 que es de estado --no
+     * quedarse sin administradores activos-- se lanza como
+     * {@link EstadoInvalidoException} y sale con 409.
+     */
+    @ExceptionHandler(OperacionNoPermitidaException.class)
+    public ResponseEntity<ErrorResponse> manejarOperacionNoPermitida(
+            OperacionNoPermitidaException ex,
+            HttpServletRequest request) {
+
+        ErrorResponse cuerpo = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .estado(HttpStatus.FORBIDDEN.value())
+                .error("Prohibido")
+                .mensaje(ex.getMessage())
+                .ruta(request.getRequestURI())
+                .build();
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(cuerpo);
+    }
+
+    /**
      * ID inválido -> 400 BAD REQUEST.
      */
     @ExceptionHandler(IdInvalidoException.class)

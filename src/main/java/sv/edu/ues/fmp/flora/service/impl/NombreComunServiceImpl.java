@@ -134,6 +134,23 @@ public class NombreComunServiceImpl implements NombreComunService {
         request.setNombre(Textos.normalizar(request.getNombre()));
 
         NombreComun entidad = buscarOFallar(id);
+
+        // La MISMA regla que PATCH marcar-principal, y por eso llama al mismo
+        // metodo: un nombre dado de baja no puede quedar como principal. El PUT
+        // no la aplicaba, asi que bastaba mandar esPrincipal=true sobre un
+        // nombre inactivo para saltarsela y dejar a la especie con un nombre de
+        // cabecera que no se muestra en ninguna parte.
+        //
+        // Se comprueba con que el Request lo pida --y no solo en la promocion
+        // false -> true-- para que la respuesta sea identica a la del PATCH:
+        // tambien el PUT que confirma el principal de un nombre ya inactivo se
+        // rechaza, en vez de dar un 200 que da por bueno ese estado. Para
+        // editarle la region o el nombre a un registro asi, primero se lo
+        // reactiva.
+        if (Boolean.TRUE.equals(request.getEsPrincipal())) {
+            exigirActivoParaSerPrincipal(entidad);
+        }
+
         Long idEspecie = entidad.getEspecie().getIdEspecie();
 
         // Normalizada por el mismo motivo que en crear(): la comprobacion tiene
@@ -170,10 +187,7 @@ public class NombreComunServiceImpl implements NombreComunService {
     public NombreComunResponse marcarComoPrincipal(Long id) {
         NombreComun entidad = buscarOFallar(id);
 
-        if (!Boolean.TRUE.equals(entidad.getActivo())) {
-            throw new EstadoInvalidoException(
-                    "Un nombre común desactivado no puede marcarse como principal.");
-        }
+        exigirActivoParaSerPrincipal(entidad);
 
         // Idempotente: repetir la promocion del que ya es principal no es un
         // error, simplemente no hay nada que cambiar.
@@ -231,6 +245,32 @@ public class NombreComunServiceImpl implements NombreComunService {
         entidad.setActivo(true);
 
         return nombreComunMapper.toResponse(entidad);
+    }
+
+    /**
+     * Regla R1, la mitad que no respalda la base: el principal tiene que estar
+     * activo.
+     *
+     * <h2>Por que no basta el indice</h2>
+     * {@code uk_nombre_comun_principal} es un indice unico PARCIAL
+     * {@code (id_especie) WHERE es_principal AND activo}: garantiza que no haya
+     * dos principales activos a la vez, pero una fila con
+     * {@code es_principal = true} y {@code activo = false} simplemente queda
+     * fuera del indice y no incumple nada. Esa combinacion si es un estado
+     * valido cuando se da de baja el ultimo nombre que le quedaba a la especie
+     * (ver {@link #desactivar}), asi que la base no puede prohibirla; lo que no
+     * puede pasar es que se llegue a ella PROMOVIENDO un nombre inactivo, y eso
+     * se decide aqui.
+     * <p>
+     * Lo llaman los dos caminos que marcan un principal, {@code PATCH
+     * marcar-principal} y el {@code PUT} con {@code esPrincipal=true}, para que
+     * el criterio no se duplique ni se separe con el tiempo.
+     */
+    private static void exigirActivoParaSerPrincipal(NombreComun entidad) {
+        if (!Boolean.TRUE.equals(entidad.getActivo())) {
+            throw new EstadoInvalidoException(
+                    "Un nombre común desactivado no puede marcarse como principal.");
+        }
     }
 
     /**

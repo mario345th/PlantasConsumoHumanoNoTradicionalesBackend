@@ -45,16 +45,42 @@ import com.nimbusds.jose.proc.SecurityContext;
  *       exige, pero lo descubre al firmar el primer token; comprobarlo aqui
  *       convierte "el login devuelve 500" en "la aplicacion no arranca y dice
  *       por que".</li>
- *   <li><strong>El secreto de desarrollo no vale en produccion.</strong> El
+ *   <li><strong>El secreto de desarrollo solo vale en desarrollo.</strong> El
  *       valor por omision de {@code app.jwt.secret} esta commiteado, asi que
- *       cualquiera que lea el repositorio puede firmar tokens validos. Antes,
- *       un despliegue que olvidara {@code JWT_SECRET} arrancaba igual y nadie
- *       se enteraba. Ahora, si hay un perfil de produccion activo y el secreto
- *       resuelto sigue siendo el marcador, no arranca.</li>
+ *       cualquiera que lea el repositorio puede firmar tokens validos para
+ *       cualquier despliegue que lo siga usando. Si el secreto resuelto es el
+ *       marcador y el ambiente no es de desarrollo, la aplicacion no
+ *       arranca.</li>
  * </ol>
- * En desarrollo --sin perfil, o con {@code dev}-- el marcador sigue
- * funcionando igual que antes: la idea es que nadie tenga que configurar nada
- * para levantar el proyecto en su maquina.
+ *
+ * <h2>Que cuenta como desarrollo (SEG-PB-02)</h2>
+ * La comprobacion es una LISTA BLANCA, no una lista de ambientes prohibidos.
+ * La primera version miraba si habia un perfil {@code prod},
+ * {@code produccion} o {@code production} activo, y eso dejaba el agujero
+ * abierto para cualquier otro nombre: un despliegue con el perfil {@code qa},
+ * {@code staging}, {@code uat} o {@code docker} firmaba con la clave del
+ * repositorio y nada avisaba. Invertida la logica, el marcador se acepta
+ * unicamente cuando:
+ * <ul>
+ *   <li>no hay ningun perfil activo, que es como se levanta el proyecto en la
+ *       maquina de cada quien y como corren las pruebas; o</li>
+ *   <li>TODOS los perfiles activos estan en {@link #PERFILES_DE_DESARROLLO}.
+ *       Basta un perfil que no sea de desarrollo --aunque venga acompañado de
+ *       {@code dev}-- para exigir un {@code JWT_SECRET} propio: si algo que no
+ *       es local esta activo, el despliegue ya no es solo el de la maquina de
+ *       quien escribe el codigo.</li>
+ * </ul>
+ * Cualquier otro ambiente tiene que definir {@code JWT_SECRET} con un valor
+ * propio. Es configuracion del despliegue; aqui solo esta la guarda que
+ * impide arrancar sin ella.
+ * <p>
+ * El caso "sin ningun perfil activo" es deliberadamente permisivo: nadie
+ * tiene que configurar nada para levantar el proyecto en su maquina. La
+ * contrapartida, dicha para que no sorprenda: un despliegue que olvide
+ * <em>tambien</em> el perfil arranca con el marcador. Cerrar eso significaria
+ * exigir {@code -Dspring.profiles.active=dev} a todo el equipo y a las
+ * pruebas; es una decision del equipo y, si se toma, el cambio es una linea en
+ * {@link #esDesarrollo(Collection)}.
  */
 @Configuration
 public class JwtConfig {
@@ -78,15 +104,17 @@ public class JwtConfig {
             "flora-ues-fmp-secreto-de-desarrollo-cambiar-en-produccion-2026";
 
     /**
-     * Nombres de perfil que se consideran produccion.
+     * Los unicos nombres de perfil con los que se admite el secreto de
+     * desarrollo.
      * <p>
-     * Son varios porque el despliegue todavia no esta decidido y no se sabe
-     * cual va a usar el equipo; reconocer los tres sale gratis y evita que la
-     * proteccion quede desactivada por haber escrito {@code production} donde
-     * el codigo esperaba {@code prod}.
+     * Estan los dos idiomas porque el proyecto mezcla los dos, y
+     * {@code local} y {@code test} porque son los que se usan para correr en
+     * la maquina de cada quien y en las pruebas. Agregar un nombre aqui es
+     * declarar "este ambiente puede firmar con la clave que esta en el
+     * repositorio": no se agrega un perfil de despliegue por comodidad.
      */
-    private static final Set<String> PERFILES_DE_PRODUCCION =
-            Set.of("prod", "produccion", "production");
+    private static final Set<String> PERFILES_DE_DESARROLLO =
+            Set.of("dev", "desarrollo", "local", "test");
 
     private final SecretKey claveSimetrica;
 
@@ -111,8 +139,8 @@ public class JwtConfig {
      * @param secreto         el valor ya resuelto de {@code app.jwt.secret}
      * @param perfilesActivos los perfiles activos; vacio en desarrollo
      * @throws IllegalStateException si el secreto es corto, o si es el
-     *                               marcador de desarrollo con un perfil de
-     *                               produccion activo
+     *                               marcador de desarrollo en un ambiente que
+     *                               no es de desarrollo
      */
     static void validarSecreto(String secreto, Collection<String> perfilesActivos) {
         int bytes = secreto.getBytes(StandardCharsets.UTF_8).length;
@@ -124,24 +152,41 @@ public class JwtConfig {
                             + bytes + ". Defina la variable de entorno JWT_SECRET con un valor más largo.");
         }
 
-        if (SECRETO_DE_DESARROLLO.equals(secreto) && esProduccion(perfilesActivos)) {
+        if (SECRETO_DE_DESARROLLO.equals(secreto) && !esDesarrollo(perfilesActivos)) {
             throw new IllegalStateException(
-                    "Define la variable JWT_SECRET en producción; no se permite el secreto de "
+                    "Define la variable JWT_SECRET en producción, y en cualquier otro ambiente "
+                            + "que no sea de desarrollo; no se permite el secreto de "
                             + "desarrollo. El valor por omisión de app.jwt.secret está en el "
                             + "repositorio, así que cualquiera que lo lea puede firmar tokens "
-                            + "válidos para este despliegue. Perfiles activos: "
-                            + perfilesActivos + ".");
+                            + "válidos para este despliegue. Ambientes de desarrollo: sin "
+                            + "perfil activo, o únicamente " + PERFILES_DE_DESARROLLO
+                            + ". Perfiles activos: " + perfilesActivos + ".");
         }
     }
 
-    /** Compara sin distinguir mayusculas: el perfil lo escribe una persona. */
-    private static boolean esProduccion(Collection<String> perfilesActivos) {
+    /**
+     * Si el ambiente es de desarrollo: sin perfiles, o con todos los activos en
+     * {@link #PERFILES_DE_DESARROLLO}.
+     * <p>
+     * Compara sin distinguir mayusculas y recortando espacios porque el perfil
+     * lo escribe una persona, en una variable de entorno o en la linea de
+     * comandos.
+     */
+    private static boolean esDesarrollo(Collection<String> perfilesActivos) {
+        // Sin perfil activo es el arranque local de siempre, y el de las
+        // pruebas. Si esto cambiara a false, levantar el proyecto en una
+        // maquina nueva exigiria configurar el perfil o el secreto.
+        if (perfilesActivos.isEmpty()) {
+            return true;
+        }
+
         for (String perfil : perfilesActivos) {
-            if (perfil != null && PERFILES_DE_PRODUCCION.contains(perfil.trim().toLowerCase(Locale.ROOT))) {
-                return true;
+            if (perfil == null
+                    || !PERFILES_DE_DESARROLLO.contains(perfil.trim().toLowerCase(Locale.ROOT))) {
+                return false;
             }
         }
-        return false;
+        return true;
     }
 
     /** Firma los tokens que emite {@code POST /api/auth/login}. */

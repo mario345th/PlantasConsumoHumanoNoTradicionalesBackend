@@ -104,10 +104,15 @@ public class RolController {
 
     @Operation(summary = "Dar de baja lógica un rol",
             description = "No borra la fila: usuario_rol y rol_permiso la referencian por "
-                    + "llave foránea y un DELETE físico rompería esas referencias.")
+                    + "llave foránea y un DELETE físico rompería esas referencias. "
+                    + "El rol ADMINISTRADOR no se puede dar de baja mientras haya "
+                    + "administradores activos: desactivarlo se lo quitaría a todos a la "
+                    + "vez y dejaría el sistema sin administración (SEG-H09).")
     @ApiResponse(responseCode = "400", description = "El id no es un valor positivo")
     @ApiResponse(responseCode = "204", description = "Rol desactivado")
     @ApiResponse(responseCode = "404", description = "No existe un rol con ese id")
+    @ApiResponse(responseCode = "409", description = "Es el rol ADMINISTRADOR y la baja "
+            + "dejaría el sistema sin administradores activos")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         rolService.desactivar(id);

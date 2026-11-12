@@ -6,9 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
-import java.util.Optional;
 
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,10 +17,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import sv.edu.ues.fmp.flora.config.SiembraDeFichas.Ficha;
 import sv.edu.ues.fmp.flora.dto.response.UsuarioResponse;
-import sv.edu.ues.fmp.flora.entity.Especie;
 import sv.edu.ues.fmp.flora.entity.enums.EstadoPublicacion;
-import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.service.EmailService;
 import sv.edu.ues.fmp.flora.service.JwtService;
 
@@ -45,6 +44,20 @@ import sv.edu.ues.fmp.flora.service.JwtService;
  * existe sean <strong>la misma respuesta</strong>, no solo el mismo codigo. Si
  * el mensaje se separara, comparar las dos volveria a delatar que fichas hay
  * en preparacion, que es justo lo que el cambio quiere evitar.
+ *
+ * <h2>Por que ahora siembra en vez de buscar en la base</h2>
+ * Estas pruebas buscaban una ficha sin publicar entre los datos de las
+ * migraciones y se saltaban si no la encontraban. Desde {@code V14}, que dejo
+ * las quince fichas en PUBLICADA, no la encontraban nunca y cinco pruebas de
+ * aqui dejaron de ejecutarse en silencio. Ahora {@link SiembraDeFichas} crea
+ * una ficha BORRADOR, una EN_REVISION y una PUBLICADA, cada una con los seis
+ * sub-recursos poblados, y el rollback de {@code @Transactional} se las lleva.
+ * <p>
+ * Que los seis traigan contenido es parte del punto: si estuvieran vacios, un
+ * guard roto devolveria {@code 200 []} y la prueba del 404 lo cazaria igual,
+ * pero las de 200 no distinguirian "se ve" de "no hay nada". Con filas de
+ * verdad, el 200 con el permiso afirma que el contenido del borrador se
+ * entrega, que es la otra mitad de la regla.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -72,10 +85,27 @@ class EspecieSubRecursosVisibilidadTest {
     private JwtService jwtService;
 
     @Autowired
-    private EspecieRepository especieRepository;
+    private EntityManager entityManager;
 
     @MockitoBean
     private EmailService emailService;
+
+    private Ficha borrador;
+    private Ficha enRevision;
+    private Ficha publicada;
+
+    @BeforeEach
+    void sembrar() {
+        SiembraDeFichas siembra = new SiembraDeFichas(entityManager);
+
+        borrador = siembra.sembrar(EstadoPublicacion.BORRADOR);
+        enRevision = siembra.sembrar(EstadoPublicacion.EN_REVISION);
+        publicada = siembra.sembrar(EstadoPublicacion.PUBLICADA);
+    }
+
+    private List<Ficha> sinPublicar() {
+        return List.of(borrador, enRevision);
+    }
 
     private String tokenCon(String... permisos) {
         UsuarioResponse usuario = UsuarioResponse.builder()
@@ -94,44 +124,19 @@ class EspecieSubRecursosVisibilidadTest {
         return "/api/especies/" + idEspecie + "/" + subRecurso;
     }
 
-    private Optional<Especie> algunaNoPublicada() {
-        return especieRepository.findAll().stream()
-                .filter(especie -> especie.getEstadoPublicacion() != EstadoPublicacion.PUBLICADA)
-                .findFirst();
-    }
-
-    private Optional<Especie> algunaPublicada() {
-        return especieRepository
-                .findByEstadoPublicacionAndActivaTrue(EstadoPublicacion.PUBLICADA)
-                .stream()
-                .findFirst();
-    }
-
-    private Long idDeUnBorrador() {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-        return borrador.get().getIdEspecie();
-    }
-
-    private Long idDeUnaPublicada() {
-        Optional<Especie> publicada = algunaPublicada();
-        Assumptions.assumeTrue(publicada.isPresent(), "no hay fichas publicadas en la base");
-        return publicada.get().getIdEspecie();
-    }
-
     // ---------- 1. El anonimo no ve el contenido de un borrador ----------
 
     @Test
     void anonimo_subRecursosDeUnBorrador_devuelve404() throws Exception {
-        Long idBorrador = idDeUnBorrador();
-
-        for (String subRecurso : SUB_RECURSOS) {
-            mockMvc.perform(get(ruta(idBorrador, subRecurso)))
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.estado").value(404))
-                    .andExpect(jsonPath("$.error").value("Recurso no encontrado"))
-                    .andExpect(jsonPath("$.mensaje")
-                            .value("No existe una especie con id " + idBorrador));
+        for (Ficha ficha : sinPublicar()) {
+            for (String subRecurso : SUB_RECURSOS) {
+                mockMvc.perform(get(ruta(ficha.id(), subRecurso)))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.estado").value(404))
+                        .andExpect(jsonPath("$.error").value("Recurso no encontrado"))
+                        .andExpect(jsonPath("$.mensaje")
+                                .value("No existe una especie con id " + ficha.id()));
+            }
         }
     }
 
@@ -143,34 +148,45 @@ class EspecieSubRecursosVisibilidadTest {
      */
     @Test
     void anonimo_elBorradorYUnIdInexistenteRespondenIgual() throws Exception {
-        Long idBorrador = idDeUnBorrador();
+        for (Ficha ficha : sinPublicar()) {
+            for (String subRecurso : SUB_RECURSOS) {
+                String deBorrador = mockMvc.perform(get(ruta(ficha.id(), subRecurso)))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.estado").value(404))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
 
-        for (String subRecurso : SUB_RECURSOS) {
-            String deBorrador = mockMvc.perform(get(ruta(idBorrador, subRecurso)))
-                    .andExpect(status().isNotFound())
-                    .andReturn()
-                    .getResponse()
-                    .getContentAsString();
+                String deIdInventado = mockMvc.perform(get(ruta(ID_INEXISTENTE, subRecurso)))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.estado").value(404))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
 
-            String deIdInventado = mockMvc.perform(get(ruta(ID_INEXISTENTE, subRecurso)))
-                    .andExpect(status().isNotFound())
-                    .andReturn()
-                    .getResponse()
-                    .getContentAsString();
-
-            // Se normaliza lo que por fuerza tiene que diferir: el id dentro
-            // del mensaje, el id dentro de la ruta y el instante.
-            assertEquals(
-                    normalizar(deIdInventado, ID_INEXISTENTE),
-                    normalizar(deBorrador, idBorrador),
-                    "el 404 del borrador y el del id inexistente difieren en " + subRecurso);
+                // Se normaliza lo que por fuerza tiene que diferir: el id
+                // dentro del mensaje, el id dentro de la ruta y el instante.
+                assertEquals(
+                        normalizar(deIdInventado, ID_INEXISTENTE),
+                        normalizar(deBorrador, ficha.id()),
+                        "el 404 del borrador y el del id inexistente difieren en " + subRecurso);
+            }
         }
     }
 
+    /**
+     * El codigo de estado del cuerpo se reemplaza ANTES que el id, y el id solo
+     * donde no esta pegado a otro digito. Si no, el dia en que la secuencia de
+     * {@code especie} llegue al id 404 --y llega, porque cada corrida la
+     * avanza-- el {@code "estado":404} de un cuerpo se normalizaria y el del
+     * otro no, y la prueba fallaria sin que nada estuviera mal. Que los dos
+     * cuerpos son 404 lo afirma por separado {@code status().isNotFound()}.
+     */
     private static String normalizar(String cuerpo, Long id) {
         return cuerpo
-                .replace(String.valueOf(id), "{id}")
-                .replaceAll("\"timestamp\":\"[^\"]*\"", "\"timestamp\":\"{instante}\"");
+                .replaceAll("\"estado\":\\s*[0-9]+", "\"estado\":{estado}")
+                .replaceAll("\"timestamp\":\"[^\"]*\"", "\"timestamp\":\"{instante}\"")
+                .replaceAll("(?<![0-9])" + id + "(?![0-9])", "{id}");
     }
 
     /**
@@ -181,14 +197,14 @@ class EspecieSubRecursosVisibilidadTest {
      */
     @Test
     void conTokenSinEspecieConsultar_subRecursosDeUnBorrador_devuelve404YNo403() throws Exception {
-        Long idBorrador = idDeUnBorrador();
-
-        for (String subRecurso : SUB_RECURSOS) {
-            mockMvc.perform(get(ruta(idBorrador, subRecurso))
-                            .header(HttpHeaders.AUTHORIZATION, tokenCon("MULTIMEDIA_GESTIONAR")))
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.mensaje")
-                            .value("No existe una especie con id " + idBorrador));
+        for (Ficha ficha : sinPublicar()) {
+            for (String subRecurso : SUB_RECURSOS) {
+                mockMvc.perform(get(ruta(ficha.id(), subRecurso))
+                                .header(HttpHeaders.AUTHORIZATION, tokenCon("MULTIMEDIA_GESTIONAR")))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.mensaje")
+                                .value("No existe una especie con id " + ficha.id()));
+            }
         }
     }
 
@@ -196,19 +212,20 @@ class EspecieSubRecursosVisibilidadTest {
 
     @Test
     void anonimo_subRecursosDeUnaPublicada_devuelve200() throws Exception {
-        Long idPublicada = idDeUnaPublicada();
-
         for (String subRecurso : SUB_RECURSOS) {
-            mockMvc.perform(get(ruta(idPublicada, subRecurso)))
+            mockMvc.perform(get(ruta(publicada.id(), subRecurso)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray());
+                    .andExpect(jsonPath("$").isArray())
+                    // La siembra pobla los seis, asi que una lista vacia aqui
+                    // seria un filtro de mas, no una ficha sin contenido.
+                    .andExpect(jsonPath("$").isNotEmpty());
         }
     }
 
     /** Los parametros de filtro de los que lo tienen siguen funcionando igual. */
     @Test
     void anonimo_subRecursosDeUnaPublicada_conSoloActivos_devuelve200() throws Exception {
-        Long idPublicada = idDeUnaPublicada();
+        Long idPublicada = publicada.id();
 
         mockMvc.perform(get(ruta(idPublicada, "imagenes")).param("soloActivas", "true"))
                 .andExpect(status().isOk());
@@ -224,13 +241,16 @@ class EspecieSubRecursosVisibilidadTest {
 
     @Test
     void conEspecieConsultar_subRecursosDeUnBorrador_devuelve200() throws Exception {
-        Long idBorrador = idDeUnBorrador();
-
-        for (String subRecurso : SUB_RECURSOS) {
-            mockMvc.perform(get(ruta(idBorrador, subRecurso))
-                            .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray());
+        for (Ficha ficha : sinPublicar()) {
+            for (String subRecurso : SUB_RECURSOS) {
+                mockMvc.perform(get(ruta(ficha.id(), subRecurso))
+                                .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$").isArray())
+                        // Con el permiso se entrega el contenido del borrador,
+                        // no una lista recortada.
+                        .andExpect(jsonPath("$").isNotEmpty());
+            }
         }
     }
 
@@ -263,16 +283,16 @@ class EspecieSubRecursosVisibilidadTest {
      */
     @Test
     void elDetallePublicoYLosSubRecursosDanElMismo404ParaUnBorrador() throws Exception {
-        Long idBorrador = idDeUnBorrador();
+        for (Ficha ficha : sinPublicar()) {
+            String esperado = "No existe una especie con id " + ficha.id();
 
-        String esperado = "No existe una especie con id " + idBorrador;
+            mockMvc.perform(get("/api/especies/publicadas/" + ficha.id()))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.mensaje").value(esperado));
 
-        mockMvc.perform(get("/api/especies/publicadas/" + idBorrador))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.mensaje").value(esperado));
-
-        mockMvc.perform(get(ruta(idBorrador, "imagenes")))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.mensaje").value(esperado));
+            mockMvc.perform(get(ruta(ficha.id(), "imagenes")))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.mensaje").value(esperado));
+        }
     }
 }

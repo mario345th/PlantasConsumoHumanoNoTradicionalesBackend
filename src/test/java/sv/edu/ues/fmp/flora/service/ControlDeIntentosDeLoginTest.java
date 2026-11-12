@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
 import sv.edu.ues.fmp.flora.exception.DemasiadosIntentosException;
+import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin.Cuenta;
 
 /**
  * Pruebas del freno a la fuerza bruta, sin Spring y sin base de datos.
@@ -20,6 +21,13 @@ import sv.edu.ues.fmp.flora.exception.DemasiadosIntentosException;
  * El componente recibe un {@link Clock} por su constructor de paquete
  * precisamente para esto: comprobar que el enfriamiento termina y que la
  * ventana caduca sin tener que esperar quince minutos de verdad.
+ * <p>
+ * Las pruebas cuentan contra una {@link Cuenta} ya resuelta --un id-- porque es
+ * lo que hace el login desde que se corrigio SEG-H07. Que el correo y el nombre
+ * de usuario de una misma persona lleguen a la misma cuenta no se puede
+ * comprobar aqui, porque la resolucion ocurre en
+ * {@code UsuarioServiceImpl.iniciarSesion} contra la base; eso lo cubre
+ * {@code FrenoDeLoginTest} desde HTTP.
  */
 class ControlDeIntentosDeLoginTest {
 
@@ -27,7 +35,15 @@ class ControlDeIntentosDeLoginTest {
     private static final long VENTANA_MINUTOS = 15;
     private static final long ENFRIAMIENTO_MINUTOS = 15;
 
-    private static final String USUARIO = "admin.demo";
+    /**
+     * Ids con un numero que no puede aparecer por casualidad en el mensaje del
+     * bloqueo, que habla de minutos: asi
+     * {@link #elMensajeNoRepiteElIdentificador()} comprueba algo de verdad.
+     */
+    private static final long ID_USUARIO = 4242L;
+
+    private static final Cuenta CUENTA = Cuenta.deUsuario(ID_USUARIO);
+    private static final Cuenta OTRA_CUENTA = Cuenta.deUsuario(4343L);
 
     /** Reloj que avanza solo cuando la prueba se lo pide. */
     private static final class RelojControlado extends Clock {
@@ -60,8 +76,12 @@ class ControlDeIntentosDeLoginTest {
             MAX_INTENTOS, VENTANA_MINUTOS, ENFRIAMIENTO_MINUTOS, reloj);
 
     private void fallar(int veces) {
+        fallar(CUENTA, veces);
+    }
+
+    private void fallar(Cuenta cuenta, int veces) {
         for (int i = 0; i < veces; i++) {
-            control.registrarFallo(USUARIO);
+            control.registrarFallo(cuenta);
         }
     }
 
@@ -69,7 +89,7 @@ class ControlDeIntentosDeLoginTest {
     void porDebajoDelLimite_dejaSeguirIntentando() {
         fallar(MAX_INTENTOS - 1);
 
-        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(USUARIO));
+        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(CUENTA));
     }
 
     @Test
@@ -77,7 +97,7 @@ class ControlDeIntentosDeLoginTest {
         fallar(MAX_INTENTOS);
 
         DemasiadosIntentosException error = assertThrows(DemasiadosIntentosException.class,
-                () -> control.verificarQuePuedeIntentar(USUARIO));
+                () -> control.verificarQuePuedeIntentar(CUENTA));
 
         assertTrue(error.getMessage().startsWith("Demasiados intentos fallidos"),
                 "el mensaje deberia explicar el bloqueo: " + error.getMessage());
@@ -97,7 +117,7 @@ class ControlDeIntentosDeLoginTest {
         reloj.avanzar(Duration.ofMinutes(ENFRIAMIENTO_MINUTOS - 1));
 
         assertThrows(DemasiadosIntentosException.class,
-                () -> control.verificarQuePuedeIntentar(USUARIO));
+                () -> control.verificarQuePuedeIntentar(CUENTA));
     }
 
     @Test
@@ -106,19 +126,19 @@ class ControlDeIntentosDeLoginTest {
 
         reloj.avanzar(Duration.ofMinutes(ENFRIAMIENTO_MINUTOS + 1));
 
-        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(USUARIO));
+        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(CUENTA));
     }
 
     @Test
     void unExitoAntesDelLimite_borraLoAcumulado() {
         fallar(MAX_INTENTOS - 1);
-        control.registrarExito(USUARIO);
+        control.registrarExito(CUENTA);
 
         // Si el contador no se hubiera reiniciado, este unico fallo seria el
         // quinto y bloquearia.
-        control.registrarFallo(USUARIO);
+        control.registrarFallo(CUENTA);
 
-        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(USUARIO));
+        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(CUENTA));
     }
 
     /**
@@ -128,9 +148,9 @@ class ControlDeIntentosDeLoginTest {
     @Test
     void fallosSeparadosPorMasQueLaVentana_noBloquean() {
         for (int i = 0; i < MAX_INTENTOS * 3; i++) {
-            control.registrarFallo(USUARIO);
+            control.registrarFallo(CUENTA);
             reloj.avanzar(Duration.ofMinutes(VENTANA_MINUTOS + 1));
-            assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(USUARIO),
+            assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(CUENTA),
                     "un fallo cada " + (VENTANA_MINUTOS + 1) + " minutos no deberia bloquear");
         }
     }
@@ -140,24 +160,62 @@ class ControlDeIntentosDeLoginTest {
         fallar(MAX_INTENTOS);
 
         assertThrows(DemasiadosIntentosException.class,
-                () -> control.verificarQuePuedeIntentar(USUARIO));
-        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar("investigador.demo"));
+                () -> control.verificarQuePuedeIntentar(CUENTA));
+        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(OTRA_CUENTA));
     }
 
     /**
-     * La busqueda del login es {@code IgnoreCase}, asi que el contador tambien:
-     * si no, el limite se esquivaria cambiando una mayuscula en cada intento.
+     * SEG-H07: una cuenta resuelta se identifica por su id y por nada mas, asi
+     * que da igual con que texto se haya llegado a ella. Dos {@code Cuenta} del
+     * mismo usuario son la misma entrada del contador.
      */
     @Test
-    void elContadorNoDistingueMayusculasNiEspacios() {
-        control.registrarFallo("admin.demo");
-        control.registrarFallo("ADMIN.DEMO");
-        control.registrarFallo("  Admin.Demo  ");
-        control.registrarFallo("admin.DEMO");
-        control.registrarFallo("AdMiN.dEmO");
+    void laCuentaResueltaNoDependeDelTextoEscrito() {
+        // Como si los cinco fallos hubieran entrado unos por el nombre de
+        // usuario y otros por el correo: el login resuelve los dos al mismo id
+        // antes de contar.
+        for (int i = 0; i < MAX_INTENTOS; i++) {
+            control.registrarFallo(Cuenta.deUsuario(7L));
+        }
 
         assertThrows(DemasiadosIntentosException.class,
-                () -> control.verificarQuePuedeIntentar("admin.demo"));
+                () -> control.verificarQuePuedeIntentar(Cuenta.deUsuario(7L)));
+    }
+
+    /**
+     * Un texto sin resolver y un id no comparten espacio de nombres: quien
+     * escriba "7" no puede bloquear al usuario con id 7.
+     */
+    @Test
+    void elTextoSinResolverNoColisionaConUnId() {
+        fallar(Cuenta.noResuelta("7"), MAX_INTENTOS);
+
+        assertThrows(DemasiadosIntentosException.class,
+                () -> control.verificarQuePuedeIntentar(Cuenta.noResuelta("7")));
+        assertDoesNotThrow(() -> control.verificarQuePuedeIntentar(Cuenta.deUsuario(7L)));
+    }
+
+    /**
+     * La busqueda del login es {@code IgnoreCase}, asi que el contador del
+     * texto sin resolver tambien: si no, el limite se esquivaria cambiando una
+     * mayuscula.
+     */
+    @Test
+    void elContadorDelTextoNoDistingueMayusculasNiEspacios() {
+        control.registrarFallo(Cuenta.noResuelta("no.existe"));
+        control.registrarFallo(Cuenta.noResuelta("NO.EXISTE"));
+        control.registrarFallo(Cuenta.noResuelta("  No.Existe  "));
+        control.registrarFallo(Cuenta.noResuelta("no.EXISTE"));
+        control.registrarFallo(Cuenta.noResuelta("nO.eXiStE"));
+
+        assertThrows(DemasiadosIntentosException.class,
+                () -> control.verificarQuePuedeIntentar(Cuenta.noResuelta("no.existe")));
+    }
+
+    /** Contar por cuenta exige el id; pasar null es un error de programacion. */
+    @Test
+    void cuentaDeUsuario_sinId_noSeConstruye() {
+        assertThrows(IllegalArgumentException.class, () -> Cuenta.deUsuario(null));
     }
 
     @Test
@@ -165,9 +223,9 @@ class ControlDeIntentosDeLoginTest {
         fallar(MAX_INTENTOS);
 
         DemasiadosIntentosException error = assertThrows(DemasiadosIntentosException.class,
-                () -> control.verificarQuePuedeIntentar(USUARIO));
+                () -> control.verificarQuePuedeIntentar(CUENTA));
 
-        assertTrue(!error.getMessage().contains(USUARIO),
+        assertTrue(!error.getMessage().contains(String.valueOf(ID_USUARIO)),
                 "el mensaje no deberia devolver el identificador: " + error.getMessage());
     }
 }

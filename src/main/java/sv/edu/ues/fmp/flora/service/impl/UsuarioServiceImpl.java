@@ -23,6 +23,7 @@ import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.UsuarioMapper;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
 import sv.edu.ues.fmp.flora.service.ControlDeIntentosDeLogin;
+import sv.edu.ues.fmp.flora.service.ProteccionDeAdministracion;
 import sv.edu.ues.fmp.flora.service.UsuarioService;
 import sv.edu.ues.fmp.flora.util.Paginacion;
 
@@ -41,6 +42,13 @@ public class UsuarioServiceImpl implements UsuarioService {
      * {@link #iniciarSesion(UsuarioLoginRequest)}.
      */
     private final ControlDeIntentosDeLogin controlDeIntentosDeLogin;
+
+    /**
+     * Las reglas de SEG-H09 que protegen el acceso de administracion. Las
+     * mismas que aplica {@code UsuarioRolServiceImpl} al asignar o quitar el
+     * rol ADMINISTRADOR; aqui se usan para la baja logica.
+     */
+    private final ProteccionDeAdministracion proteccionDeAdministracion;
 
     @Override
     @Transactional(readOnly = true)
@@ -110,6 +118,18 @@ public class UsuarioServiceImpl implements UsuarioService {
     @Transactional
     public void desactivar(Long id) {
         Usuario entidad = buscarOFallar(id);
+
+        // SEG-H09. La baja logica es la otra via por la que se podia perder el
+        // acceso de administracion: nadie se desactiva a si mismo (R1), al
+        // superadministrador no lo desactiva nadie (R4), a un administrador
+        // solo lo desactiva el superadministrador (R3) y ninguna baja puede
+        // dejar el sistema sin administradores activos (R5).
+        //
+        // Va despues de buscarOFallar para que un id inexistente siga siendo
+        // 404 y no un 403: las reglas hablan de un usuario concreto y no tiene
+        // sentido evaluarlas sobre uno que no existe.
+        proteccionDeAdministracion.verificarDesactivacion(entidad);
+
         entidad.setActivo(false);
     }
 
@@ -138,32 +158,52 @@ public class UsuarioServiceImpl implements UsuarioService {
     @Override
     @Transactional
     public UsuarioResponse iniciarSesion(UsuarioLoginRequest request) {
-        // Lo primero, antes de tocar la base: durante el enfriamiento la
-        // respuesta tiene que ser la misma con la clave correcta y con una
-        // equivocada, o el bloqueo seguiria sirviendo para probar claves.
-        controlDeIntentosDeLogin.verificarQuePuedeIntentar(request.usuario());
-
+        // Lo primero es RESOLVER LA CUENTA, y por eso esta consulta va antes
+        // del freno (SEG-H07). El campo usuario acepta el correo o el nombre
+        // de usuario, asi que el contador tiene que ir por id_usuario: cuando
+        // iba por el texto escrito, agotar los intentos con el nombre de
+        // usuario dejaba otros cinco disponibles escribiendo el correo de la
+        // misma cuenta, y el bloqueo se esquivaba alternandolos.
+        //
+        // No se filtra por activo aqui: una cuenta desactivada tambien es una
+        // cuenta, y sus intentos tienen que contar contra su propio id. El
+        // estado se exige mas abajo, junto con la clave.
         Optional<Usuario> encontrado = usuarioRepository
-                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(request.usuario(), request.usuario())
-                .filter(Usuario::getActivo);
+                .findByCorreoIgnoreCaseOrNombreUsuarioIgnoreCase(request.usuario(), request.usuario());
+
+        ControlDeIntentosDeLogin.Cuenta cuenta = encontrado
+                .map(usuario -> ControlDeIntentosDeLogin.Cuenta.deUsuario(usuario.getIdUsuario()))
+                // Un texto que no corresponde a ninguna cuenta no tiene id;
+                // se cuenta por el texto para que probar usuarios inventados
+                // tampoco sea ilimitado.
+                .orElseGet(() -> ControlDeIntentosDeLogin.Cuenta.noResuelta(request.usuario()));
+
+        // Antes de comparar la clave: durante el enfriamiento la respuesta
+        // tiene que ser la misma con la clave correcta y con una equivocada, o
+        // el bloqueo seguiria sirviendo para probar claves. La comparacion
+        // BCrypt, que es la parte cara y la unica que podria delatar algo por
+        // tiempos, nunca se llega a ejecutar.
+        controlDeIntentosDeLogin.verificarQuePuedeIntentar(cuenta);
+
+        Optional<Usuario> valido = encontrado.filter(Usuario::getActivo);
 
         // Las tres causas de fallo --no existe, esta desactivado, la clave no
         // coincide-- se tratan juntas para que sigan siendo indistinguibles
         // desde fuera y para que las tres cuenten igual contra el limite.
-        if (encontrado.isEmpty()
-                || !passwordEncoder.matches(request.clave(), encontrado.get().getClaveHash())) {
+        if (valido.isEmpty()
+                || !passwordEncoder.matches(request.clave(), valido.get().getClaveHash())) {
 
             // El contador vive en memoria, no en la transaccion: el rollback
             // que se lleva esta excepcion no lo deshace, que es justo lo que
             // hace falta para que el fallo quede contado.
-            controlDeIntentosDeLogin.registrarFallo(request.usuario());
+            controlDeIntentosDeLogin.registrarFallo(cuenta);
 
             throw new CredencialesInvalidasException("Usuario o clave incorrectos");
         }
 
-        controlDeIntentosDeLogin.registrarExito(request.usuario());
+        controlDeIntentosDeLogin.registrarExito(cuenta);
 
-        Usuario usuario = encontrado.get();
+        Usuario usuario = valido.get();
         usuario.setUltimoAcceso(LocalDateTime.now());
         Usuario actualizado = usuarioRepository.saveAndFlush(usuario);
 

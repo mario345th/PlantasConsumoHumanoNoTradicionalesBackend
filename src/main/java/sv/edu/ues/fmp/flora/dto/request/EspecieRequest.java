@@ -3,7 +3,6 @@ package sv.edu.ues.fmp.flora.dto.request;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,8 +16,14 @@ import java.util.List;
  * Datos que entran al crear o actualizar una especie.
  * <p>
  * No incluye {@code idEspecie}, {@code estadoPublicacion}, {@code activa},
- * {@code validadaPor}, {@code publicadaPor} ni fecha alguna: todos esos los
- * controla el servidor a traves de las transiciones de estado del servicio.
+ * {@code creadaPor}, {@code validadaPor}, {@code publicadaPor} ni fecha
+ * alguna: todos esos los controla el servidor a traves de las transiciones de
+ * estado del servicio.
+ * <p>
+ * {@code creadaPor} estaba aqui y se quito: el creador se toma del usuario
+ * autenticado ({@code UsuarioAutenticado}), nunca del cuerpo. Si un cliente lo
+ * sigue enviando se ignora en silencio, igual que los demas campos que no
+ * estan en este DTO.
  */
 @Getter
 @Setter
@@ -45,18 +50,6 @@ public class EspecieRequest {
     private String advertencias;
 
     /**
-     * El {@code @Positive} descarta aqui los ids imposibles (0 y negativos),
-     * que antes pasaban el DTO y terminaban en un 404 del servicio al no
-     * encontrar el usuario: un id negativo es un cuerpo mal formado, 400, no
-     * un usuario inexistente. El 404 se reserva para ids positivos que
-     * simplemente no estan en la tabla.
-     */
-    // TODO: eliminar cuando se implemente JWT; se tomará del token del usuario autenticado
-    @NotNull(message = "El usuario creador es obligatorio")
-    @Positive(message = "El identificador del usuario creador debe ser positivo")
-    private Long creadaPor;
-
-    /**
      * Los datos taxonomicos viajan anidados porque la relacion es 1:1
      * obligatoria en ambos sentidos.
      * El {@code @Valid} es imprescindible: sin el, las validaciones de
@@ -76,9 +69,23 @@ public class EspecieRequest {
      * El {@code @Valid} sobre la lista propaga las validaciones de cada
      * {@link NombreComunRequest}; sin el no se ejecutarian.
      * <p>
+     * El {@code @NotNull} va sobre el ELEMENTO de la lista, no sobre la lista,
+     * y no es lo mismo que el {@code @Valid}. {@code @Valid} cascada las
+     * reglas de cada {@code NombreComunRequest} --su {@code @NotBlank nombre}
+     * incluido-- pero un elemento que llega nulo
+     * ({@code "nombresComunes": [null]}) no tiene ninguna regla que
+     * incumplir, asi que pasaba la validacion entera y reventaba despues en el
+     * servicio, al leerle {@code esPrincipal} a un null: un 500 por un cuerpo
+     * mal formado. Con la restriccion sobre el elemento, ese cuerpo se queda
+     * en el 400 del {@code MethodArgumentNotValidException}, con el mensaje de
+     * abajo y sin que nadie haya leido nada del elemento.
+     * <p>
      * Solo se tiene en cuenta al crear. En un PUT se ignora: la lista de
      * nombres comunes de una especie ya existente se gestiona por su modulo.
      */
     @Valid
-    private List<NombreComunRequest> nombresComunes;
+    private List<
+            @NotNull(message = "Cada nombre común de la lista debe venir con sus datos; "
+                    + "no se admiten elementos nulos")
+            NombreComunRequest> nombresComunes;
 }

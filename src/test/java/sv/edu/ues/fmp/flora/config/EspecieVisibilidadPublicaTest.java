@@ -5,10 +5,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.hamcrest.Matchers;
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,10 +17,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import sv.edu.ues.fmp.flora.config.SiembraDeFichas.Ficha;
 import sv.edu.ues.fmp.flora.dto.response.UsuarioResponse;
-import sv.edu.ues.fmp.flora.entity.Especie;
 import sv.edu.ues.fmp.flora.entity.enums.EstadoPublicacion;
-import sv.edu.ues.fmp.flora.repository.EspecieRepository;
 import sv.edu.ues.fmp.flora.service.EmailService;
 import sv.edu.ues.fmp.flora.service.JwtService;
 
@@ -35,20 +34,26 @@ import sv.edu.ues.fmp.flora.service.JwtService;
  * por dentro), a {@code GET /api/especies?estado=BORRADOR} y a
  * {@code GET /api/especies/{id}} de una ficha en preparacion.
  *
- * <h2>Por que usa los datos de la base y no los siembra</h2>
- * Una especie PUBLICADA no se puede insertar a mano sin pelear con
- * {@code ck_especie_publicacion}, que exige {@code validada_por},
- * {@code publicada_por} y {@code fecha_publicacion} coherentes. La migracion
- * {@code V9} ya siembra las ocho fichas con los estados que hacen falta (cinco
- * PUBLICADA, dos EN_REVISION, una BORRADOR), asi que las pruebas las buscan
- * por estado. Cuando la base no las tiene, la prueba se salta en vez de
- * fallar: es el mismo criterio que {@link AutenticacionJwtTest} usa para los
- * usuarios.
+ * <h2>Por que ahora siembra en vez de buscar en la base</h2>
+ * Esta clase buscaba una ficha sin publicar entre los datos de las migraciones
+ * y, si no la habia, se saltaba con {@code Assumptions.assumeTrue}. Cuando
+ * {@code V14} recargo el catalogo dejando las quince fichas en PUBLICADA, cinco
+ * pruebas de aqui dejaron de ejecutarse sin que nada fallara. Ahora
+ * {@link SiembraDeFichas} crea en el {@code @BeforeEach} una ficha BORRADOR,
+ * una EN_REVISION y una PUBLICADA --con su arbol de hijos-- y las pruebas
+ * trabajan sobre esas: corren siempre, con los datos que sean, y fallan si el
+ * guard se rompe.
+ * <p>
+ * La siembra incluye los dos estados sin publicar a proposito. El hallazgo
+ * original hablaba de BORRADOR y EN_REVISION, y lo que cierra la puerta no es
+ * el nombre del estado sino la condicion {@code estado = PUBLICADA}; probar los
+ * dos es lo que demuestra que no se dejo uno fuera.
+ * <p>
+ * Todo lo sembrado vive en la transaccion de la prueba y el rollback de
+ * {@code @Transactional} se lo lleva: la base queda como estaba.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-// Solo lecturas, pero el rollback deja claro que estas pruebas no tocan los
-// datos sembrados que usan.
 @Transactional
 class EspecieVisibilidadPublicaTest {
 
@@ -64,10 +69,28 @@ class EspecieVisibilidadPublicaTest {
     private JwtService jwtService;
 
     @Autowired
-    private EspecieRepository especieRepository;
+    private EntityManager entityManager;
 
     @MockitoBean
     private EmailService emailService;
+
+    private Ficha borrador;
+    private Ficha enRevision;
+    private Ficha publicada;
+
+    @BeforeEach
+    void sembrar() {
+        SiembraDeFichas siembra = new SiembraDeFichas(entityManager);
+
+        borrador = siembra.sembrar(EstadoPublicacion.BORRADOR);
+        enRevision = siembra.sembrar(EstadoPublicacion.EN_REVISION);
+        publicada = siembra.sembrar(EstadoPublicacion.PUBLICADA);
+    }
+
+    /** Las dos fichas que el anonimo no debe ver por ninguna via. */
+    private List<Ficha> sinPublicar() {
+        return List.of(borrador, enRevision);
+    }
 
     private String tokenCon(String... permisos) {
         UsuarioResponse usuario = UsuarioResponse.builder()
@@ -80,20 +103,6 @@ class EspecieVisibilidadPublicaTest {
                 .build();
 
         return "Bearer " + jwtService.emitir(usuario, List.of("CONSULTOR"), List.of(permisos)).token();
-    }
-
-    /** Una ficha que NO esta publicada: BORRADOR o EN_REVISION, lo que haya. */
-    private Optional<Especie> algunaNoPublicada() {
-        return especieRepository.findAll().stream()
-                .filter(especie -> especie.getEstadoPublicacion() != EstadoPublicacion.PUBLICADA)
-                .findFirst();
-    }
-
-    private Optional<Especie> algunaPublicada() {
-        return especieRepository
-                .findByEstadoPublicacionAndActivaTrue(EstadoPublicacion.PUBLICADA)
-                .stream()
-                .findFirst();
     }
 
     // ---------- El anonimo no llega a los borradores ----------
@@ -116,11 +125,10 @@ class EspecieVisibilidadPublicaTest {
 
     @Test
     void detalleInternoDeUnBorrador_sinToken_devuelve401() throws Exception {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-
-        mockMvc.perform(get(LISTADO_INTERNO + "/" + borrador.get().getIdEspecie()))
-                .andExpect(status().isUnauthorized());
+        for (Ficha ficha : sinPublicar()) {
+            mockMvc.perform(get(LISTADO_INTERNO + "/" + ficha.id()))
+                    .andExpect(status().isUnauthorized());
+        }
     }
 
     /**
@@ -130,14 +138,12 @@ class EspecieVisibilidadPublicaTest {
      */
     @Test
     void detallePublicoDeUnBorrador_devuelve404ComoSiNoExistiera() throws Exception {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-
-        Long idBorrador = borrador.get().getIdEspecie();
-
-        mockMvc.perform(get(LISTADO_PUBLICO + "/" + idBorrador))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.mensaje").value("No existe una especie con id " + idBorrador));
+        for (Ficha ficha : sinPublicar()) {
+            mockMvc.perform(get(LISTADO_PUBLICO + "/" + ficha.id()))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.mensaje")
+                            .value("No existe una especie con id " + ficha.id()));
+        }
 
         mockMvc.perform(get(LISTADO_PUBLICO + "/999999"))
                 .andExpect(status().isNotFound())
@@ -146,13 +152,16 @@ class EspecieVisibilidadPublicaTest {
 
     @Test
     void listadoPublico_noIncluyeLasFichasSinPublicar() throws Exception {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-
         mockMvc.perform(get(LISTADO_PUBLICO))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].idEspecie")
-                        .value(Matchers.not(Matchers.hasItem(borrador.get().getIdEspecie().intValue()))))
+                        .value(Matchers.not(Matchers.hasItem(borrador.id().intValue()))))
+                .andExpect(jsonPath("$[*].idEspecie")
+                        .value(Matchers.not(Matchers.hasItem(enRevision.id().intValue()))))
+                // Y la sembrada PUBLICADA si esta: que el listado no filtre de
+                // mas, que seria la otra forma de pasar esta prueba.
+                .andExpect(jsonPath("$[*].idEspecie")
+                        .value(Matchers.hasItem(publicada.id().intValue())))
                 .andExpect(jsonPath("$[*].estadoPublicacion")
                         .value(Matchers.everyItem(Matchers.is("PUBLICADA"))));
     }
@@ -163,7 +172,13 @@ class EspecieVisibilidadPublicaTest {
     void listadoInterno_conEspecieConsultar_devuelve200() throws Exception {
         mockMvc.perform(get(LISTADO_INTERNO)
                         .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                // El listado interno si trae las que no estan publicadas: es su
+                // razon de ser y lo que justifica que pida permiso.
+                .andExpect(jsonPath("$[*].idEspecie")
+                        .value(Matchers.hasItem(borrador.id().intValue())))
+                .andExpect(jsonPath("$[*].idEspecie")
+                        .value(Matchers.hasItem(enRevision.id().intValue())));
     }
 
     @Test
@@ -176,32 +191,27 @@ class EspecieVisibilidadPublicaTest {
 
     @Test
     void filtroPorEstado_conEspecieConsultar_sirveParaLeerBorradores() throws Exception {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-
-        Especie ficha = borrador.get();
-
-        mockMvc.perform(get(LISTADO_INTERNO)
-                        .param("estado", ficha.getEstadoPublicacion().name())
-                        .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].idEspecie")
-                        .value(Matchers.hasItem(ficha.getIdEspecie().intValue())));
+        for (Ficha ficha : sinPublicar()) {
+            mockMvc.perform(get(LISTADO_INTERNO)
+                            .param("estado", ficha.estado().name())
+                            .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].idEspecie")
+                            .value(Matchers.hasItem(ficha.id().intValue())))
+                    .andExpect(jsonPath("$[*].estadoPublicacion")
+                            .value(Matchers.everyItem(Matchers.is(ficha.estado().name()))));
+        }
     }
 
     @Test
     void detalleInternoDeUnBorrador_conEspecieConsultar_devuelve200() throws Exception {
-        Optional<Especie> borrador = algunaNoPublicada();
-        Assumptions.assumeTrue(borrador.isPresent(), "no hay fichas sin publicar en la base");
-
-        Especie ficha = borrador.get();
-
-        mockMvc.perform(get(LISTADO_INTERNO + "/" + ficha.getIdEspecie())
-                        .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.idEspecie").value(ficha.getIdEspecie()))
-                .andExpect(jsonPath("$.estadoPublicacion")
-                        .value(ficha.getEstadoPublicacion().name()));
+        for (Ficha ficha : sinPublicar()) {
+            mockMvc.perform(get(LISTADO_INTERNO + "/" + ficha.id())
+                            .header(HttpHeaders.AUTHORIZATION, tokenCon(ESPECIE_CONSULTAR)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.idEspecie").value(ficha.id()))
+                    .andExpect(jsonPath("$.estadoPublicacion").value(ficha.estado().name()));
+        }
     }
 
     // ---------- El catalogo publico no se rompio ----------
@@ -214,14 +224,9 @@ class EspecieVisibilidadPublicaTest {
 
     @Test
     void detallePublicoDeUnaPublicada_sigueAbiertoSinToken() throws Exception {
-        Optional<Especie> publicada = algunaPublicada();
-        Assumptions.assumeTrue(publicada.isPresent(), "no hay fichas publicadas en la base");
-
-        Especie ficha = publicada.get();
-
-        mockMvc.perform(get(LISTADO_PUBLICO + "/" + ficha.getIdEspecie()))
+        mockMvc.perform(get(LISTADO_PUBLICO + "/" + publicada.id()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.idEspecie").value(ficha.getIdEspecie()))
+                .andExpect(jsonPath("$.idEspecie").value(publicada.id()))
                 .andExpect(jsonPath("$.estadoPublicacion").value("PUBLICADA"));
     }
 
@@ -233,10 +238,7 @@ class EspecieVisibilidadPublicaTest {
      */
     @Test
     void subRecursosDeUnaEspecie_siguenAbiertosSinToken() throws Exception {
-        Optional<Especie> publicada = algunaPublicada();
-        Assumptions.assumeTrue(publicada.isPresent(), "no hay fichas publicadas en la base");
-
-        Long id = publicada.get().getIdEspecie();
+        Long id = publicada.id();
 
         mockMvc.perform(get("/api/especies/" + id + "/imagenes")).andExpect(status().isOk());
         mockMvc.perform(get("/api/especies/" + id + "/videos")).andExpect(status().isOk());

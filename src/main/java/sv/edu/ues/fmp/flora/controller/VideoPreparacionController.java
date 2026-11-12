@@ -67,6 +67,22 @@ public class VideoPreparacionController {
      * {@code /api/preparaciones-consumo/{idPreparacion}/videos} de
      * {@link PreparacionVideoController} sigue siendo valida y llama al mismo
      * metodo del servicio; esta es la que QA espera encontrar aqui.
+     *
+     * <h2>MM-106: el permiso que le faltaba</h2>
+     * Este POST nacio sin {@code @PreAuthorize} --el resto de las escrituras
+     * de esta clase si lo llevaban-- y la matriz de {@code SecurityConfig}
+     * cierra la ruta con {@code anyRequest().authenticated()}, de modo que la
+     * autorizacion por permiso depende por completo de la anotacion del
+     * metodo. Resultado: cualquier usuario con un token valido, incluso sin un
+     * solo rol, registraba videos (QA obtuvo 201 donde la ruta anidada
+     * responde 403).
+     * <p>
+     * La expresion es la misma de {@link PreparacionVideoController#crear},
+     * copiada tal cual: las dos rutas llegan al mismo
+     * {@code VideoPreparacionService.crear(idPreparacion, request)} y no tiene
+     * sentido que exijan cosas distintas. Los {@code GET} no se tocaron,
+     * siguen publicos por {@code CATALOGO_PUBLICO} igual que los de la ruta
+     * anidada.
      */
     @Operation(summary = "Registrar un video para una preparación de consumo",
             description = "Recibe una URL HTTP(S) de video, no archivos binarios.")
@@ -74,6 +90,7 @@ public class VideoPreparacionController {
     @ApiResponse(responseCode = "400", description = "Identificador o campos del video inválidos")
     @ApiResponse(responseCode = "404", description = "La preparación de consumo no existe")
     @ApiResponse(responseCode = "409", description = "La preparación está desactivada o el video ya está registrado")
+    @PreAuthorize("hasAuthority('MULTIMEDIA_GESTIONAR')")
     @PostMapping("/preparacion/{idPreparacion}")
     public ResponseEntity<VideoPreparacionResponse> crear(
             @PathVariable @Positive(message = "El id de la preparación debe ser mayor que cero") Long idPreparacion,

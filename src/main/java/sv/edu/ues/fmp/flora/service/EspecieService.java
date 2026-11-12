@@ -45,7 +45,13 @@ public interface EspecieService {
      */
     EspecieResponse obtenerPublicadaPorId(Long id);
 
-    /** Crea la especie y su taxonomia en la misma transaccion. */
+    /**
+     * Crea la especie y su taxonomia en la misma transaccion.
+     * <p>
+     * El creador ({@code creada_por}) es siempre el usuario autenticado. No se
+     * recibe como parametro ni se lee del Request a proposito: ver
+     * {@code UsuarioAutenticado}.
+     */
     EspecieResponse crear(EspecieRequest request);
 
     /** Actualiza los campos editables de la ficha y su taxonomia. */
@@ -70,10 +76,18 @@ public interface EspecieService {
      * atribuida a quien llamara de ultimo. Para cambiar de validador hay que
      * rechazar la ficha primero, que es la unica transicion que limpia
      * {@code validadaPor}, y volver a enviarla a revision.
+     * <p>
+     * El validador es el usuario autenticado, igual que el creador en
+     * {@link #crear(EspecieRequest)}: antes llegaba como parametro de query y
+     * eso permitia firmar la validacion en nombre de otro.
      */
-    EspecieResponse validar(Long id, Long idValidador);
+    EspecieResponse validar(Long id);
 
-    EspecieResponse publicar(Long id, Long idPublicador);
+    /**
+     * Publica una ficha ya validada. El publicador es el usuario autenticado,
+     * por el mismo motivo que el validador en {@link #validar(Long)}.
+     */
+    EspecieResponse publicar(Long id);
 
     EspecieResponse rechazar(Long id);
 

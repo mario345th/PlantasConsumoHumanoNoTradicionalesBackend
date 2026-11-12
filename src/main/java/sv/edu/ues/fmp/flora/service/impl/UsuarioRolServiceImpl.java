@@ -27,6 +27,7 @@ import sv.edu.ues.fmp.flora.repository.RolPermisoRepository;
 import sv.edu.ues.fmp.flora.repository.RolRepository;
 import sv.edu.ues.fmp.flora.repository.UsuarioRepository;
 import sv.edu.ues.fmp.flora.repository.UsuarioRolRepository;
+import sv.edu.ues.fmp.flora.service.ProteccionDeAdministracion;
 import sv.edu.ues.fmp.flora.service.UsuarioRolService;
 
 @Service
@@ -39,6 +40,13 @@ public class UsuarioRolServiceImpl implements UsuarioRolService {
     private final RolPermisoRepository rolPermisoRepository;
     private final UsuarioRolMapper usuarioRolMapper;
     private final PermisoMapper permisoMapper;
+
+    /**
+     * Las reglas de SEG-H09 sobre el rol ADMINISTRADOR. Viven en un componente
+     * aparte porque la baja de usuario --{@code UsuarioServiceImpl.desactivar}--
+     * aplica las mismas.
+     */
+    private final ProteccionDeAdministracion proteccionDeAdministracion;
 
     @Override
     @Transactional(readOnly = true)
@@ -106,6 +114,14 @@ public class UsuarioRolServiceImpl implements UsuarioRolService {
                 .orElseThrow(() -> new RecursoNoEncontradoException(
                         "No existe un rol con id " + request.getIdRol()));
 
+        // SEG-H09 R2: solo el superadministrador asigna ADMINISTRADOR. Va aqui
+        // --despues de resolver las dos entidades y antes de cualquier
+        // comprobacion de estado o de duplicado-- porque es una decision de
+        // autorizacion: a quien no puede hacer la operacion le toca el 403, no
+        // un 409 sobre el estado del usuario o del rol. Para cualquier otro rol
+        // no hace nada.
+        proteccionDeAdministracion.verificarAsignacionDeRol(usuario, rol);
+
         if (!Boolean.TRUE.equals(usuario.getActivo())) {
             throw new EstadoInvalidoException(
                     "No se puede asignar un rol al usuario " + usuario.getNombreUsuario()
@@ -143,6 +159,20 @@ public class UsuarioRolServiceImpl implements UsuarioRolService {
             throw new RecursoNoEncontradoException(
                     "El usuario " + idUsuario + " no tiene asignado el rol " + idRol);
         }
+
+        // SEG-H09 R1, R3, R4 y R5. Las reglas necesitan las entidades y no los
+        // ids: la marca es_superadmin del usuario y el nombre del rol. Las dos
+        // filas existen por las claves foraneas de usuario_rol --si la fila de
+        // la relacion existe, su usuario y su rol tambien-- asi que los
+        // orElseThrow de abajo son defensivos y no un caso esperado.
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "No existe un usuario con id " + idUsuario));
+        Rol rol = rolRepository.findById(idRol)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "No existe un rol con id " + idRol));
+
+        proteccionDeAdministracion.verificarQuitarRol(usuario, rol);
 
         usuarioRolRepository.deleteById(id);
     }

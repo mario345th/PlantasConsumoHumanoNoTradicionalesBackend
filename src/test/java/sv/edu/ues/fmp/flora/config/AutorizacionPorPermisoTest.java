@@ -43,6 +43,11 @@ import sv.edu.ues.fmp.flora.service.JwtService;
  * {@code @PreAuthorize}. Por eso los cuerpos cumplen Bean Validation y los
  * parametros obligatorios van siempre puestos; si no, estas pruebas darian 400
  * en los dos sentidos y no probarian nada.
+ * <p>
+ * {@code validar} y {@code publicar} ya no reciben ningun parametro: los
+ * {@code idValidador} / {@code idPublicador} que estas pruebas mandaban
+ * desaparecieron del controlador cuando el responsable paso a tomarse del
+ * token.
  *
  * <h2>Los tokens llevan permisos, no roles</h2>
  * El rol del token es siempre CONSULTOR y lo que cambia de una prueba a otra es
@@ -77,12 +82,18 @@ class AutorizacionPorPermisoTest {
 
     private static final String ID_INEXISTENTE = "999999";
 
-    /** Cumple Bean Validation; el creador 999999 es lo que hace fallar al servicio. */
+    /**
+     * Cumple Bean Validation. Lo que hace fallar al servicio ya no es un
+     * creador inventado en el cuerpo --{@code creadaPor} se quito del DTO,
+     * ahora sale del token-- sino que el {@code sub} del token de estas
+     * pruebas es 999, un usuario que no existe en ninguna base: el servicio
+     * responde 404 "No existe el usuario creador con id 999", que es
+     * igualmente la prueba de que el guard dejo pasar.
+     */
     private static final String CUERPO_ESPECIE = """
             {
               "nombreCientifico": "Pruebus autorizacionis",
               "descripcion": "Ficha de prueba de autorizacion",
-              "creadaPor": 999999,
               "taxonomia": { "genero": "Pruebus", "especieTaxonomica": "autorizacionis" }
             }
             """;
@@ -93,6 +104,21 @@ class AutorizacionPorPermisoTest {
 
     private static final String CUERPO_ROL_PERMISO = """
             { "idRol": 999999, "idPermiso": 999999 }
+            """;
+
+    /**
+     * Para el POST de video de preparacion (MM-106). Cumple
+     * {@code VideoPreparacionRequest} --titulo y urlVideo obligatorios, la URL
+     * con dominio y esquema-- por el motivo que explica el encabezado de la
+     * clase: un cuerpo invalido se rechaza con 400 antes de llegar al
+     * {@code @PreAuthorize} y la prueba no mediria el guard.
+     */
+    private static final String CUERPO_VIDEO_PREPARACION = """
+            {
+              "titulo": "Elaboración paso a paso de la receta",
+              "urlVideo": "https://www.youtube.com/watch?v=mm106",
+              "duracionSegundos": 180
+            }
             """;
 
     @Autowired
@@ -259,7 +285,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void validarEspecie_sinEspecieValidar_devuelve403() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/validar")
-                        .param("idValidador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenDeConsultor())))
                 .andExpect(status().isForbidden());
     }
@@ -267,7 +292,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void validarEspecie_conEspecieValidar_atraviesaElGuard() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/validar")
-                        .param("idValidador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(ESPECIE_VALIDAR))))
                 .andExpect(status().isNotFound());
     }
@@ -280,7 +304,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void validarEspecie_conEspecieEditarNoAlcanza_devuelve403() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/validar")
-                        .param("idValidador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(ESPECIE_EDITAR))))
                 .andExpect(status().isForbidden());
     }
@@ -288,7 +311,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void publicarEspecie_sinEspeciePublicar_devuelve403() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/publicar")
-                        .param("idPublicador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenDeConsultor())))
                 .andExpect(status().isForbidden());
     }
@@ -296,7 +318,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void publicarEspecie_conEspeciePublicar_atraviesaElGuard() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/publicar")
-                        .param("idPublicador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(ESPECIE_PUBLICAR))))
                 .andExpect(status().isNotFound());
     }
@@ -307,7 +328,6 @@ class AutorizacionPorPermisoTest {
     @Test
     void publicarEspecie_conEspecieValidarNoAlcanza_devuelve403() throws Exception {
         mockMvc.perform(patch("/api/especies/" + ID_INEXISTENTE + "/publicar")
-                        .param("idPublicador", "1")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(ESPECIE_VALIDAR))))
                 .andExpect(status().isForbidden());
     }
@@ -353,6 +373,35 @@ class AutorizacionPorPermisoTest {
     void escrituraEnMultimedia_conMultimediaGestionar_atraviesaElGuard() throws Exception {
         mockMvc.perform(patch("/api/imagenes-especie/" + ID_INEXISTENTE + "/activar")
                         .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(MULTIMEDIA_GESTIONAR))))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * MM-106. La ruta plana de video de preparacion nacio sin
+     * {@code @PreAuthorize} y la matriz de {@link SecurityConfig} cierra las
+     * escrituras solo con {@code anyRequest().authenticated()}: QA creo un
+     * video con un token sin un solo rol (201 donde la ruta anidada
+     * {@code POST /api/preparaciones-consumo/{id}/videos} responde 403).
+     * <p>
+     * Estas dos pruebas son el blindaje del arreglo: si alguien quita la
+     * anotacion del controlador, la primera pasa a devolver 404 --el guard ya
+     * no corta y la peticion llega al servicio-- y el build se cae aqui.
+     */
+    @Test
+    void crearVideoDePreparacionEnRutaPlana_sinMultimediaGestionar_devuelve403() throws Exception {
+        mockMvc.perform(post("/api/videos-preparacion/preparacion/" + ID_INEXISTENTE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(tokenDeConsultor()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CUERPO_VIDEO_PREPARACION))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void crearVideoDePreparacionEnRutaPlana_conMultimediaGestionar_atraviesaElGuard() throws Exception {
+        mockMvc.perform(post("/api/videos-preparacion/preparacion/" + ID_INEXISTENTE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(tokenCon(MULTIMEDIA_GESTIONAR)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CUERPO_VIDEO_PREPARACION))
                 .andExpect(status().isNotFound());
     }
 

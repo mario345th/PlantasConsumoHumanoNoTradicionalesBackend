@@ -319,6 +319,83 @@ class AutenticacionJwtTest {
                 .andExpect(jsonPath("$.mensaje").value("Usuario o clave incorrectos"));
     }
 
+    /**
+     * SEG-H01: una cabecera {@code Authorization} que no sirve no tumba una
+     * ruta publica.
+     *
+     * <h2>Que fallaba</h2>
+     * El filtro del token corre antes de la matriz de rutas, asi que veia la
+     * cabecera, intentaba autenticarla y cortaba con 401 sin que el
+     * controlador llegara a atender. Con esta cabecera no hace falta ni un
+     * token mal firmado: el resolvedor por omision exige que lo que sigue a
+     * "Bearer " encaje con {@code [a-zA-Z0-9-._~+/]+=*}, y los signos de
+     * admiracion no encajan, asi que la rechazaba como token mal formado.
+     * Resultado: quien tenia el token corrupto no podia ni volver a iniciar
+     * sesion.
+     *
+     * <h2>Como se sabe que el 401 es el bueno</h2>
+     * Por el mensaje. El del filtro es el generico de falta de token; este es
+     * el del servicio, que significa que la peticion llego al controlador, se
+     * leyo el cuerpo y se compararon credenciales. El codigo es 401 en los dos
+     * casos, asi que sin mirar el mensaje la prueba pasaria igual sin el
+     * arreglo.
+     */
+    @Test
+    void loginDeAuth_conCabeceraAuthorizationInservible_sigueAtendiendo() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer esto-no-es-un-token!!!")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usuario\":\"no.existe.seg.h01\",\"clave\":\"no-importa\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.mensaje").value("Usuario o clave incorrectos"));
+    }
+
+    /**
+     * El mismo caso con un token bien formado pero sin firma valida, que es la
+     * otra forma en que llega una cabecera inservible: un token caducado y
+     * manipulado, o de otro despliegue.
+     */
+    @Test
+    void loginDeAuth_conTokenConFirmaAlterada_sigueAtendiendo() throws Exception {
+        String token = conLaFirmaAlterada(tokenCon(List.of("ADMIN"), List.of()));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usuario\":\"no.existe.seg.h01\",\"clave\":\"no-importa\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.mensaje").value("Usuario o clave incorrectos"));
+    }
+
+    /**
+     * Y la recuperacion de clave, que es la ruta que necesita justamente quien
+     * no puede autenticarse. Responde 202 aunque el correo no exista --no
+     * confirma si hay cuenta-- asi que lo que se comprueba es que ya no es un
+     * 401 del filtro.
+     */
+    @Test
+    void recuperacionDeClave_conCabeceraAuthorizationInservible_sigueAtendiendo() throws Exception {
+        mockMvc.perform(post("/api/usuarios/recuperar-clave")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer esto-no-es-un-token!!!")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"no.existe.seg.h01@correo.local\"}"))
+                .andExpect(status().isAccepted());
+    }
+
+    /**
+     * El contrapunto: en los GET publicos del catalogo el token NO se ignora,
+     * porque ahi si cambia la respuesta (VisibilidadDeEspecie deja ver las
+     * fichas no publicadas a quien trae ESPECIE_CONSULTAR). Una cabecera
+     * inservible en esas rutas tiene que seguir dando 401 y no colarse como
+     * anonimo.
+     */
+    @Test
+    void catalogoPublico_conCabeceraAuthorizationInservible_sigueDando401() throws Exception {
+        mockMvc.perform(get(RUTA_PUBLICA)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer esto-no-es-un-token!!!"))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void loginViejoDeUsuarios_sigueSiendoPublico() throws Exception {
         mockMvc.perform(post("/api/usuarios/login")

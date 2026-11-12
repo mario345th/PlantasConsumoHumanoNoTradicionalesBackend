@@ -26,28 +26,43 @@ import sv.edu.ues.fmp.flora.exception.DemasiadosIntentosException;
  * ingenuo pero no a uno que paralelice.
  *
  * <h2>Como cuenta</h2>
- * Por cada identificador se guarda cuantos fallos seguidos lleva y cuando
- * empezo la serie. Dos reglas:
+ * Por cada cuenta se guarda cuantos fallos seguidos lleva y cuando empezo la
+ * serie. Dos reglas:
  * <ul>
  *   <li>Si entre un fallo y el siguiente pasa mas que la ventana, la serie se
  *       descarta y vuelve a empezar en uno. Asi un fallo suelto cada tanto
  *       --alguien que se equivoca de verdad-- nunca llega a bloquear.</li>
- *   <li>Al alcanzar el limite dentro de la ventana, el identificador queda
- *       bloqueado durante el enfriamiento. Durante ese rato se rechaza
- *       <strong>antes</strong> de consultar la base y antes de comparar la
- *       clave, asi que tampoco sirve para medir tiempos.</li>
+ *   <li>Al alcanzar el limite dentro de la ventana, la cuenta queda bloqueada
+ *       durante el enfriamiento. Durante ese rato se rechaza
+ *       <strong>antes</strong> de comparar la clave, asi que tampoco sirve
+ *       para medir tiempos.</li>
  * </ul>
  * Un login exitoso borra el registro.
  *
- * <h2>Lo que cuenta como un mismo usuario</h2>
- * La clave del mapa es lo que la persona escribio en el campo usuario,
- * normalizado a minusculas. El login acepta correo o nombre de usuario, asi
- * que {@code admin.demo} y {@code admin.demo@prueba.local} son la misma cuenta
- * pero <strong>dos entradas distintas</strong> en el mapa, y cada una lleva su
- * propia cuenta de fallos. Resolver eso obligaria a consultar la base antes de
- * aplicar el freno, que es justo lo que el freno quiere evitar. El efecto
- * practico es que un atacante tiene el doble de intentos si conoce las dos
- * formas; sigue siendo un limite, y queda anotado.
+ * <h2>Lo que cuenta como un mismo usuario (SEG-H07)</h2>
+ * La clave del mapa es el <strong>id del usuario</strong>, no lo que la
+ * persona escribio. Antes era el texto normalizado a minusculas, y como el
+ * login acepta indistintamente el correo o el nombre de usuario,
+ * {@code admin.demo} y {@code admin.demo@prueba.local} eran dos entradas
+ * distintas con su propia cuenta de fallos: quien agotaba los cinco intentos
+ * con el nombre de usuario seguia teniendo otros cinco escribiendo el correo,
+ * y el bloqueo se esquivaba alternando las dos formas. Con la cuenta ya
+ * resuelta, las dos formas suman al mismo contador.
+ * <p>
+ * Para un texto que no corresponde a ninguna cuenta no hay id que usar, asi
+ * que esos intentos se siguen contando por el texto normalizado --ver
+ * {@link Cuenta#noResuelta(String)}--. Hace falta: si no se contaran, probar
+ * usuarios inventados seria gratis y el limite solo aplicaria a las cuentas
+ * que existen.
+ *
+ * <h2>El precio: resolver la cuenta cuesta una consulta</h2>
+ * Contar por id obliga a buscar al usuario <strong>antes</strong> de aplicar
+ * el freno, de modo que durante el enfriamiento la peticion ya no se rechaza
+ * sin tocar la base: hace un SELECT por correo o nombre de usuario, los dos
+ * con indice unico. Lo que se sigue cumpliendo, y es lo que importa, es que el
+ * rechazo ocurre antes de comparar la clave con BCrypt, que es la parte cara y
+ * la unica que distinguiria una clave correcta de una equivocada. Ver
+ * {@code UsuarioServiceImpl.iniciarSesion}.
  * <p>
  * No se cuenta por IP. Habria que meter la peticion HTTP en la capa de
  * servicio, que es donde vive el freno para cubrir los dos endpoints de login
@@ -92,7 +107,50 @@ public class ControlDeIntentosDeLogin {
     private final Map<String, Serie> series = new ConcurrentHashMap<>();
 
     /**
-     * Fallos seguidos de un identificador.
+     * Contra quien se cuentan los intentos.
+     *
+     * <h2>Por que un tipo y no un String</h2>
+     * Las tres operaciones de esta clase se llaman con lo mismo, y si recibieran
+     * un {@code String} nada impediria volver a pasarles el texto que escribio
+     * la persona --que es justo el fallo SEG-H07 que se arreglo--. Con este tipo
+     * hay que decir explicitamente si se cuenta por cuenta resuelta
+     * ({@link #deUsuario}) o por texto sin resolver ({@link #noResuelta}), y el
+     * prefijo de la clave mantiene los dos espacios de nombres separados: un
+     * usuario con id 7 no puede colisionar con alguien que escriba "7".
+     *
+     * @param clave la clave del mapa; no se expone fuera de este componente ni
+     *              aparece en ningun mensaje
+     */
+    public record Cuenta(String clave) {
+
+        /** Intentos contra una cuenta que existe, se haya entrado por correo o por usuario. */
+        public static Cuenta deUsuario(Long idUsuario) {
+            if (idUsuario == null) {
+                throw new IllegalArgumentException(
+                        "Para contar por cuenta hace falta el id; use Cuenta.noResuelta");
+            }
+            return new Cuenta("id:" + idUsuario);
+        }
+
+        /**
+         * Intentos contra un texto que no corresponde a ninguna cuenta.
+         * <p>
+         * Se normaliza a minusculas y sin espacios en los extremos, igual que
+         * la busqueda del login, que es {@code IgnoreCase}: si no, "Noexiste" y
+         * "noexiste" contarian aparte y el limite se esquivaria cambiando una
+         * mayuscula.
+         */
+        public static Cuenta noResuelta(String identificadorEscrito) {
+            String normalizado = identificadorEscrito == null
+                    ? ""
+                    : identificadorEscrito.trim().toLowerCase(Locale.ROOT);
+
+            return new Cuenta("txt:" + normalizado);
+        }
+    }
+
+    /**
+     * Fallos seguidos de una cuenta.
      *
      * @param fallos          cuantos lleva
      * @param inicio          cuando empezo la serie, para medir la ventana
@@ -126,16 +184,15 @@ public class ControlDeIntentosDeLogin {
     }
 
     /**
-     * Corta el intento si el identificador esta en enfriamiento.
+     * Corta el intento si la cuenta esta en enfriamiento.
      * <p>
-     * Se llama al principio del login, antes de tocar la base: durante el
-     * bloqueo la respuesta es la misma con clave correcta y con clave
-     * equivocada.
+     * Se llama antes de comparar la clave: durante el bloqueo la respuesta es
+     * la misma con clave correcta y con clave equivocada.
      *
      * @throws DemasiadosIntentosException si queda enfriamiento por cumplir
      */
-    public void verificarQuePuedeIntentar(String identificador) {
-        Serie serie = series.get(clave(identificador));
+    public void verificarQuePuedeIntentar(Cuenta cuenta) {
+        Serie serie = series.get(cuenta.clave());
         if (serie == null || serie.bloqueadoHasta() == null) {
             return;
         }
@@ -151,19 +208,18 @@ public class ControlDeIntentosDeLogin {
 
         // El enfriamiento ya paso: se limpia aqui en vez de dejar la entrada
         // caducada ocupando sitio.
-        series.remove(clave(identificador));
+        series.remove(cuenta.clave());
     }
 
     /** Suma un fallo y, si se alcanzo el limite dentro de la ventana, bloquea. */
-    public void registrarFallo(String identificador) {
-        String clave = clave(identificador);
+    public void registrarFallo(Cuenta cuenta) {
         Instant ahora = reloj.instant();
 
         if (series.size() > ENTRADAS_ANTES_DE_LIMPIAR) {
             limpiar();
         }
 
-        Serie resultado = series.compute(clave, (sinUsar, actual) -> {
+        Serie resultado = series.compute(cuenta.clave(), (sinUsar, actual) -> {
             if (actual == null || seVencio(actual, ahora)) {
                 return new Serie(1, ahora, null);
             }
@@ -175,7 +231,7 @@ public class ControlDeIntentosDeLogin {
         });
 
         if (resultado.bloqueadoHasta() != null) {
-            // Sin el identificador: el log de la aplicacion no es sitio para ir
+            // Sin la cuenta: el log de la aplicacion no es sitio para ir
             // dejando los usuarios o correos que alguien estuvo probando.
             log.warn("Login bloqueado por {} intentos fallidos; enfriamiento de {} minutos",
                     resultado.fallos(), enfriamiento.toMinutes());
@@ -183,8 +239,8 @@ public class ControlDeIntentosDeLogin {
     }
 
     /** Un login correcto borra lo acumulado. */
-    public void registrarExito(String identificador) {
-        series.remove(clave(identificador));
+    public void registrarExito(Cuenta cuenta) {
+        series.remove(cuenta.clave());
     }
 
     /**
@@ -202,14 +258,5 @@ public class ControlDeIntentosDeLogin {
     private void limpiar() {
         Instant ahora = reloj.instant();
         series.values().removeIf(serie -> seVencio(serie, ahora));
-    }
-
-    /**
-     * Minusculas y sin espacios, igual que la busqueda del login, que es
-     * {@code IgnoreCase}: si no, "Admin.Demo" y "admin.demo" contarian aparte
-     * y el limite se esquivaria cambiando una mayuscula.
-     */
-    private static String clave(String identificador) {
-        return identificador == null ? "" : identificador.trim().toLowerCase(Locale.ROOT);
     }
 }

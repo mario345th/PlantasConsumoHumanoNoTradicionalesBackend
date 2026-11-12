@@ -91,11 +91,13 @@ public class EspecieController {
     }
 
     @Operation(summary = "Crear una especie junto con su taxonomía",
-            description = "El estado inicial siempre es BORRADOR. Cualquier campo "
-                    + "estadoPublicacion, activa, validadaPor, publicadaPor o fechas "
-                    + "enviados en el cuerpo son ignorados silenciosamente; el flujo "
-                    + "editorial se gestiona con los endpoints PATCH dedicados "
-                    + "(enviar-revision, validar, publicar, rechazar).")
+            description = "El estado inicial siempre es BORRADOR. La especie queda "
+                    + "registrada a nombre del usuario del token: creadaPor ya no se "
+                    + "recibe en el cuerpo. Cualquier campo creadaPor, estadoPublicacion, "
+                    + "activa, validadaPor, publicadaPor o fechas enviados en el cuerpo son "
+                    + "ignorados silenciosamente; el flujo editorial se gestiona con los "
+                    + "endpoints PATCH dedicados (enviar-revision, validar, publicar, "
+                    + "rechazar).")
     @PreAuthorize("hasAuthority('ESPECIE_CREAR')")
     @PostMapping
     public ResponseEntity<EspecieResponse> crear(@Valid @RequestBody EspecieRequest request) {
@@ -134,28 +136,24 @@ public class EspecieController {
         return ResponseEntity.ok(especieService.enviarARevision(id));
     }
 
-    @Operation(summary = "Marcar la ficha como validada, sin publicarla")
+    @Operation(summary = "Marcar la ficha como validada, sin publicarla",
+            description = "El validador es el usuario del token. El parámetro idValidador "
+                    + "se eliminó: permitía atribuirle la validación a otro usuario. Si se "
+                    + "envía, se ignora.")
     @PreAuthorize("hasAuthority('ESPECIE_VALIDAR')")
     @PatchMapping("/{id}/validar")
-    public ResponseEntity<EspecieResponse> validar(
-            @PathVariable Long id,
-            // TODO: eliminar el parámetro cuando se implemente JWT; el validador
-            // se tomará del token del usuario autenticado
-            @RequestParam(name = "idValidador") Long idValidador) {
-
-        return ResponseEntity.ok(especieService.validar(id, idValidador));
+    public ResponseEntity<EspecieResponse> validar(@PathVariable Long id) {
+        return ResponseEntity.ok(especieService.validar(id));
     }
 
-    @Operation(summary = "Publicar una ficha ya validada")
+    @Operation(summary = "Publicar una ficha ya validada",
+            description = "El publicador es el usuario del token. El parámetro "
+                    + "idPublicador se eliminó, por el mismo motivo que idValidador en "
+                    + "validar. Si se envía, se ignora.")
     @PreAuthorize("hasAuthority('ESPECIE_PUBLICAR')")
     @PatchMapping("/{id}/publicar")
-    public ResponseEntity<EspecieResponse> publicar(
-            @PathVariable Long id,
-            // TODO: eliminar el parámetro cuando se implemente JWT; el publicador
-            // se tomará del token del usuario autenticado
-            @RequestParam(name = "idPublicador") Long idPublicador) {
-
-        return ResponseEntity.ok(especieService.publicar(id, idPublicador));
+    public ResponseEntity<EspecieResponse> publicar(@PathVariable Long id) {
+        return ResponseEntity.ok(especieService.publicar(id));
     }
 
     @Operation(summary = "Rechazar una ficha en revisión")

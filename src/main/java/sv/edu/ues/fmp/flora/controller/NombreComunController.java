@@ -35,7 +35,14 @@ public class NombreComunController {
         return ResponseEntity.ok(nombreComunService.obtenerPorId(id));
     }
 
-    @Operation(summary = "Actualizar un nombre común")
+    @Operation(summary = "Actualizar un nombre común",
+            description = "Con esPrincipal=true aplica la misma regla que "
+                    + "PATCH /{id}/marcar-principal: un nombre desactivado no puede quedar "
+                    + "como principal de la especie. Para promover uno dado de baja, "
+                    + "reactívelo primero con PATCH /{id}/activar.")
+    @ApiResponse(responseCode = "409",
+            description = "Ya existe ese nombre y región en la especie, o se pidió "
+                    + "esPrincipal=true sobre un nombre desactivado")
     @PreAuthorize("hasAuthority('ESPECIE_EDITAR')")
     @PutMapping("/{id}")
     public ResponseEntity<NombreComunResponse> actualizar(

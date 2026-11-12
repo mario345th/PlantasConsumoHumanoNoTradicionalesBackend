@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import sv.edu.ues.fmp.flora.exception.RecursoNoEncontradoException;
 import sv.edu.ues.fmp.flora.mapper.FuenteMapper;
 import sv.edu.ues.fmp.flora.repository.FuenteRepository;
 import sv.edu.ues.fmp.flora.service.FuenteService;
+import sv.edu.ues.fmp.flora.util.Restricciones;
 
 @Service
 @RequiredArgsConstructor
@@ -63,7 +65,8 @@ public class FuenteServiceImpl implements FuenteService {
 
         Fuente nueva = fuenteMapper.toEntity(request);
 
-        Fuente guardada = fuenteRepository.save(nueva);
+        Fuente guardada = guardarConTituloUnico(nueva,
+                "Ya existe una fuente con el título " + request.getTitulo());
 
         return fuenteMapper.toResponse(guardada);
     }
@@ -85,7 +88,10 @@ public class FuenteServiceImpl implements FuenteService {
 
         fuenteMapper.updateEntity(entidad, request);
 
-        return fuenteMapper.toResponse(entidad);
+        Fuente actualizada = guardarConTituloUnico(entidad,
+                "Ya existe otra fuente con el título " + request.getTitulo());
+
+        return fuenteMapper.toResponse(actualizada);
     }
 
     @Override
@@ -116,7 +122,51 @@ public class FuenteServiceImpl implements FuenteService {
                         "No existe una fuente con id " + id));
     }
 
+    /**
+     * Escribe la fuente traduciendo el choque con el indice unico del titulo
+     * al mismo 409 que devuelven las comprobaciones de arriba.
+     *
+     * <h2>Que cubre que no cubran esas comprobaciones</h2>
+     * {@code existsByTituloIgnoreCase} / {@code findByTituloIgnoreCase} se
+     * consultan antes de escribir, asi que entre la consulta y el INSERT cabe
+     * otra transaccion con el mismo titulo: las dos pasan la comprobacion y es
+     * {@code uk_fuente_titulo_lower} la que rechaza a la segunda. Tambien
+     * cubren de menos cuando una fila vieja quedo guardada con espacios
+     * alrededor: la consulta compara el titulo completo, mientras que el indice
+     * compara {@code lower(btrim(titulo))}, asi que el indice ve un duplicado
+     * donde la consulta no veia ninguno.
+     * <p>
+     * En los dos casos, sin este catch la respuesta era el 409 generico del
+     * {@code GlobalExceptionHandler} ("La operacion viola una restriccion de la
+     * base de datos"), que no nombra el titulo que choco.
+     *
+     * <h2>Por que saveAndFlush y no save</h2>
+     * El UPDATE de {@code actualizar} lo emitiria Hibernate al confirmar la
+     * transaccion, es decir DESPUES de que este metodo termine: la excepcion no
+     * se podria atrapar aqui y volveria a salir el mensaje generico. El flush
+     * adelanta la escritura para que el choque ocurra donde se sabe explicar.
+     */
+    private Fuente guardarConTituloUnico(Fuente fuente, String mensajeDeConflicto) {
+        try {
+            return fuenteRepository.saveAndFlush(fuente);
+        } catch (DataIntegrityViolationException choque) {
+            if (Restricciones.violacionDe(choque, "uk_fuente_titulo_lower")) {
+                throw new RecursoDuplicadoException(mensajeDeConflicto);
+            }
+            throw choque;
+        }
+    }
 
+    /**
+     * Normaliza el titulo y la url sobre el propio Request, antes de consultar
+     * y de escribir.
+     * <p>
+     * El titulo se normaliza porque es el que lleva el indice unico
+     * {@code uk_fuente_titulo_lower} sobre {@code lower(btrim(titulo))}: si se
+     * guardara con espacios alrededor, la comprobacion de duplicados de arriba
+     * --que compara el titulo completo-- y el indice dejarian de mirar lo
+     * mismo.
+     */
     private void normalizar(FuenteRequest request) {
         request.setTitulo(limpiarEspacios(request.getTitulo()));
         request.setUrl(limpiarEspacios(request.getUrl()));

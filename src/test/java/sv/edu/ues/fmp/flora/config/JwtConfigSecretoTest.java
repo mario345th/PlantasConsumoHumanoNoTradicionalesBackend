@@ -80,6 +80,45 @@ class JwtConfigSecretoTest {
         JwtConfig.validarSecreto(JwtConfig.SECRETO_DE_DESARROLLO, List.of());
         JwtConfig.validarSecreto(JwtConfig.SECRETO_DE_DESARROLLO, List.of("dev"));
         JwtConfig.validarSecreto(JwtConfig.SECRETO_DE_DESARROLLO, List.of("test", "local"));
+        JwtConfig.validarSecreto(JwtConfig.SECRETO_DE_DESARROLLO, List.of("DEV", " desarrollo "));
+    }
+
+    /**
+     * SEG-PB-02: la comprobacion es una lista blanca, no una lista de nombres
+     * de produccion.
+     * <p>
+     * Antes solo se reconocian {@code prod}, {@code produccion} y
+     * {@code production}, asi que un despliegue con cualquier otro nombre de
+     * perfil firmaba con la clave que esta en el repositorio y nada avisaba.
+     * Estos son los nombres que un despliegue real usa mas a menudo; ninguno es
+     * de desarrollo, asi que ninguno admite el marcador.
+     */
+    @Test
+    void secretoDeDesarrollo_conUnPerfilQueNoEsDeDesarrollo_noSeAdmite() {
+        List<List<String>> perfiles = List.of(
+                List.of("qa"),
+                List.of("staging"),
+                List.of("uat"),
+                List.of("docker"),
+                List.of("demo"),
+                // Un perfil de desarrollo acompañado de uno que no lo es
+                // tampoco alcanza: si algo que no es local esta activo, el
+                // ambiente ya no es la maquina de quien programa.
+                List.of("dev", "qa"));
+
+        for (List<String> activos : perfiles) {
+            assertThrows(IllegalStateException.class,
+                    () -> JwtConfig.validarSecreto(JwtConfig.SECRETO_DE_DESARROLLO, activos),
+                    "deberia rechazarse con los perfiles " + activos);
+        }
+    }
+
+    /** Un secreto propio vale en cualquier ambiente, de desarrollo o no. */
+    @Test
+    void secretoPropio_siSeAdmiteConCualquierPerfil() {
+        JwtConfig.validarSecreto(SECRETO_PROPIO, List.of("qa"));
+        JwtConfig.validarSecreto(SECRETO_PROPIO, List.of("staging", "metrics"));
+        JwtConfig.validarSecreto(SECRETO_PROPIO, List.of());
     }
 
     @Test

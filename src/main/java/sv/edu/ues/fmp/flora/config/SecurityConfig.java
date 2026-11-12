@@ -2,6 +2,7 @@ package sv.edu.ues.fmp.flora.config;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +16,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import sv.edu.ues.fmp.flora.exception.AccesoDenegadoHandler;
@@ -42,9 +48,10 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  *   <caption>Quien puede llamar a que</caption>
  *   <tr><th>Rutas</th><th>Acceso</th><th>Por que</th></tr>
  *   <tr>
- *     <td>{@code /api/auth/**}</td>
+ *     <td>{@code /api/auth/login}</td>
  *     <td>publico</td>
- *     <td>Es donde se consigue el token; exigir token aqui seria circular.</td>
+ *     <td>Es donde se consigue el token; exigir token aqui seria circular. Es
+ *         la ruta exacta y no {@code /api/auth/**}: ver {@link #PUBLICAS}.</td>
  *   </tr>
  *   <tr>
  *     <td>{@code POST /api/usuarios/login}</td>
@@ -121,6 +128,11 @@ import sv.edu.ues.fmp.flora.exception.AutenticacionEntryPoint;
  * se complementan y el orden importa: quien llega sin token lo corta el filtro
  * con un 401 y nunca llega al metodo; quien llega con token pero sin el
  * permiso lo corta method-security con un 403.
+ *
+ * <h2>Lo publico es publico aunque llegue una cabecera rota</h2>
+ * El filtro del token corre antes que esta matriz, asi que en las rutas
+ * publicas hay que decirle explicitamente que no mire la cabecera
+ * {@code Authorization}: ver {@link #resolvedorDeToken()}.
  */
 @Configuration
 @EnableMethodSecurity
@@ -254,9 +266,48 @@ public class SecurityConfig {
             "/api/especies/*/videos/**"
     };
 
-    /** Rutas abiertas sin importar el verbo. */
+    /**
+     * Los tres {@code POST} del modulo de usuarios que no pueden exigir token.
+     * <p>
+     * Estan en una constante, y no escritos en el {@code authorizeHttpRequests},
+     * porque {@link #rutasSinToken()} necesita exactamente la misma lista: si
+     * una ruta se agregara en un sitio y no en el otro, quedaria abierta pero
+     * una cabecera {@code Authorization} mal formada la seguiria tumbando con
+     * un 401.
+     */
+    private static final String[] USUARIOS_PUBLICOS_POST = {
+            "/api/usuarios/login",
+            "/api/usuarios/recuperar-clave",
+            "/api/usuarios/restablecer-clave"
+    };
+
+    /**
+     * Rutas abiertas sin importar el verbo.
+     *
+     * <h2>Por que {@code /api/auth/login} y no {@code /api/auth/**} (H5)</h2>
+     * El comodin abria <strong>todo</strong> lo que algun dia cuelgue de
+     * {@code /api/auth}, no solo lo que hay hoy. Bajo ese prefijo existe un
+     * unico endpoint publico --{@code POST /api/auth/login}-- y los que el
+     * propio {@code AuthController} ya tiene anotados como pendientes
+     * ({@code GET /api/auth/me}, los refresh tokens) no tienen por que ser
+     * publicos: {@code me} devuelve la identidad de quien llama y un refresh
+     * emite credenciales. Con el comodin habrian nacido {@code permitAll} por
+     * olvido, sin que nadie tuviera que decidirlo.
+     * <p>
+     * Acotarlo a la ruta exacta no cambia el login: sigue siendo la misma
+     * ruta, abierta igual y con la cabecera {@code Authorization} ignorada por
+     * {@link #resolvedorDeToken()}, que se arma de esta misma constante. Lo que
+     * cambia es que un endpoint nuevo bajo {@code /api/auth} cae en el
+     * {@code anyRequest().authenticated()} y, si de verdad tiene que ser
+     * publico, se agrega aqui a proposito.
+     * <p>
+     * Queda publica para cualquier verbo, no solo para {@code POST}: el metodo
+     * lo decide el {@code @PostMapping} del controlador, que responde 405 a los
+     * demas. Un 405 sin mirar el token es lo correcto en una ruta que no pide
+     * identidad.
+     */
     private static final String[] PUBLICAS = {
-            "/api/auth/**",
+            "/api/auth/login",
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/v3/api-docs",
@@ -332,9 +383,7 @@ public class SecurityConfig {
                         // token. Van antes del cierre general de
                         // /api/usuarios, porque gana la primera regla que
                         // coincide.
-                        .requestMatchers(HttpMethod.POST, "/api/usuarios/login").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/usuarios/recuperar-clave").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/usuarios/restablecer-clave").permitAll()
+                        .requestMatchers(HttpMethod.POST, USUARIOS_PUBLICOS_POST).permitAll()
                         // Recorte de los comodines de CATALOGO_PUBLICO: los
                         // cinco listados globales quedan fuera de lo publico.
                         // Tiene que ir antes del permitAll de abajo, porque
@@ -352,6 +401,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
 
                 .oauth2ResourceServer(servidor -> servidor
+                        // SEG-H01: en las rutas publicas la cabecera
+                        // Authorization no se mira. Ver resolvedorDeToken().
+                        .bearerTokenResolver(resolvedorDeToken())
                         .jwt(jwt -> jwt
                                 .decoder(jwtDecoder)
                                 .jwtAuthenticationConverter(convertidorDeAutoridades()))
@@ -366,6 +418,74 @@ public class SecurityConfig {
                         .accessDeniedHandler(accesoDenegadoHandler));
 
         return http.build();
+    }
+
+    /**
+     * De donde saca el filtro el token, con una excepcion: en las rutas que
+     * nunca necesitan identidad, de ningun sitio.
+     *
+     * <h2>El fallo que cierra (SEG-H01)</h2>
+     * {@code BearerTokenAuthenticationFilter} corre ANTES de que se evalue la
+     * matriz de rutas, asi que no sabe --ni puede saber-- que la ruta era
+     * publica: si la peticion trae una cabecera {@code Authorization}, intenta
+     * autenticarla, y si no puede corta con un 401. El resultado era que un
+     * {@code Bearer} basura tumbaba {@code POST /api/auth/login},
+     * {@code recuperar-clave} y {@code restablecer-clave} con un 401 antes de
+     * que el controlador llegara a atenderlas. Y basta con muy poco: el
+     * resolvedor por omision exige que lo que sigue a "Bearer " encaje con
+     * {@code [a-zA-Z0-9-._~+/]+=*}, de modo que una cabecera con un caracter
+     * raro ya se rechaza como token mal formado sin mirar ninguna firma.
+     * <p>
+     * Es un escenario real, no teorico: un cliente que guarda el token y lo
+     * manda en todas las peticiones --lo normal en un frontend-- se queda sin
+     * poder renovar la sesion ni pedir el restablecimiento de clave justo
+     * cuando su token se corrompio o caduco, que es cuando mas lo necesita.
+     * <p>
+     * Devolver {@code null} hace que el filtro no intente nada y deje pasar la
+     * peticion al {@code permitAll} que le toca. El token, valido o no, se
+     * ignora.
+     *
+     * <h2>Donde NO se ignora, y por que</h2>
+     * Solo en las rutas abiertas sin importar el verbo ({@link #PUBLICAS}) y en
+     * los tres POST de {@link #USUARIOS_PUBLICOS_POST}. Los {@code GET}
+     * publicos del catalogo quedan fuera a proposito: ahi el token
+     * <strong>si</strong> cambia la respuesta --{@code VisibilidadDeEspecie}
+     * deja ver el contenido de una ficha no publicada a quien traiga
+     * {@code ESPECIE_CONSULTAR}--, asi que descartarlo silenciosamente
+     * convertiria a un usuario autorizado en un anonimo y le respondería 404
+     * sobre fichas que si puede ver. En esas rutas un token invalido tiene que
+     * seguir dando 401, que es lo correcto: lo que fallo es la credencial que
+     * el cliente eligio mandar.
+     */
+    @Bean
+    public BearerTokenResolver resolvedorDeToken() {
+        BearerTokenResolver porOmision = new DefaultBearerTokenResolver();
+        RequestMatcher sinToken = rutasSinToken();
+
+        return peticion -> sinToken.matches(peticion) ? null : porOmision.resolve(peticion);
+    }
+
+    /**
+     * Las rutas de {@link #resolvedorDeToken()}, armadas a partir de las mismas
+     * constantes que usa la matriz de autorizacion para no repetir los patrones
+     * en dos sitios.
+     * <p>
+     * {@code AntPathRequestMatcher} ya no existe en Spring Security 7; el
+     * equivalente es {@link PathPatternRequestMatcher}, que entiende los mismos
+     * comodines ({@code *} un segmento, {@code **} el resto de la ruta).
+     */
+    private static RequestMatcher rutasSinToken() {
+        List<RequestMatcher> patrones = new ArrayList<>();
+
+        for (String publica : PUBLICAS) {
+            patrones.add(PathPatternRequestMatcher.withDefaults().matcher(publica));
+        }
+        for (String publica : USUARIOS_PUBLICOS_POST) {
+            patrones.add(PathPatternRequestMatcher.withDefaults()
+                    .matcher(HttpMethod.POST, publica));
+        }
+
+        return new OrRequestMatcher(patrones);
     }
 
     /**

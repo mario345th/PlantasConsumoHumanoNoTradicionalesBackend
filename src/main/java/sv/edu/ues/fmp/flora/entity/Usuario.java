@@ -49,6 +49,28 @@ public class Usuario {
     @Column(name = "activo", nullable = false)
     private Boolean activo = true;
 
+    /**
+     * Marca al superadministrador del sistema (SEG-H09).
+     *
+     * <h2>Para que sirve</h2>
+     * Es el dato con el que {@code ProteccionDeAdministracion} contesta sus
+     * cinco reglas: solo el superadministrador asigna o quita el rol
+     * ADMINISTRADOR y desactiva a un administrador, y a el nadie le quita el
+     * rol ni lo desactiva.
+     *
+     * <h2>Quien la escribe</h2>
+     * Solo una migracion. La columna nace en {@code V19}, que la pone en TRUE
+     * en el usuario {@code admin} y verifica que quede uno solo. Ninguna ruta
+     * de la API la lee ni la escribe: no esta en {@code UsuarioCreationRequest}
+     * ni en {@code UsuarioUpdateRequest} --asi que
+     * {@code UsuarioMapper.updateEntity} no puede tocarla-- ni en
+     * {@code UsuarioResponse}. Designar otro superadministrador es una
+     * migracion y una decision del equipo, no una llamada HTTP.
+     */
+    @Builder.Default
+    @Column(name = "es_superadmin", nullable = false)
+    private Boolean esSuperadmin = false;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "fecha_registro", nullable = false, updatable = false)
     private LocalDateTime fechaRegistro;
